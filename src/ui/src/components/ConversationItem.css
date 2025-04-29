@@ -1,0 +1,56 @@
+/* ConversationItem.css */
+.conversation-item {
+    padding: 12px;
+    border-radius: 8px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: background-color 0.2s;
+  }
+
+  .conversation-item:hover {
+    background-color: #f0f0f0;
+  }
+
+  .conversation-item.active {
+    background-color: #e6e6ff;
+  }
+
+  .conversation-details {
+    flex: 1;
+    overflow: hidden;
+  }
+
+  .conversation-title {
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .conversation-date {
+    font-size: 0.75rem;
+    color: #666;
+  }
+
+  .delete-button {
+    background: none;
+    border: none;
+    color: #666;
+    opacity: 0;
+    transition: opacity 0.2s;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+  }
+
+  .delete-button:hover {
+    background-color: rgba(0, 0, 0, 0.05);
+    color: #ff4757;
+  }
+
+  .conversation-item:hover .delete-button {
+    opacity: 1;
+  }

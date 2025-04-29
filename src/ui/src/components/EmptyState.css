@@ -1,0 +1,28 @@
+/* EmptyState.css */
+.empty-state {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: white;
+  }
+
+  .empty-state-content {
+    text-align: center;
+    padding: 32px;
+    max-width: 400px;
+  }
+
+  .empty-state-content svg {
+    color: #6c5ce7;
+    margin-bottom: 16px;
+  }
+
+  .empty-state-content h2 {
+    margin-bottom: 8px;
+    color: #333;
+  }
+
+  .empty-state-content p {
+    color: #666;
+  }

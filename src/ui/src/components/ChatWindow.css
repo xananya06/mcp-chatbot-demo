@@ -1,0 +1,86 @@
+/* ChatWindow.css */
+.chat-window {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background-color: white;
+}
+
+.chat-header {
+  padding: 16px;
+  border-bottom: 1px solid #e0e0e0;
+  background-color: white;
+  z-index: 1;
+}
+
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-input {
+  padding: 16px;
+  border-top: 1px solid #e0e0e0;
+  background-color: white;
+}
+
+/* Clean, unified typing indicator styles */
+.typing-indicator {
+  padding: 12px;
+  display: flex;
+  align-items: center;
+  margin-top: 8px;
+}
+
+/* Style for text + dots container */
+.typing-indicator-text {
+  display: flex;
+  color: #666;
+  font-style: italic;
+  align-items: baseline;
+  font-size: 14px;
+}
+
+/* Container for the dots */
+.typing-dots {
+  display: inline-flex;
+  margin-left: 4px;
+}
+
+/* Individual dots */
+.typing-dots .dot {
+  height: 4px;
+  width: 4px;
+  background-color: #666;
+  border-radius: 50%;
+  display: inline-block;
+  margin: 0 1px;
+  animation: bounce 1.4s infinite;
+}
+
+/* Staggered animation delays */
+.typing-dots .dot:nth-child(1) {
+  animation-delay: 0s;
+}
+
+.typing-dots .dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.typing-dots .dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+/* Bounce animation */
+@keyframes bounce {
+  0%, 60%, 100% {
+    transform: translateY(0);
+  }
+  30% {
+    transform: translateY(-4px);
+  }
+}
