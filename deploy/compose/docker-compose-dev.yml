@@ -1,23 +1,32 @@
 services:
   ui:
-    image: acuvity/acuvity-chatbot-ui:latest
+    build:
+      context: ../../src/ui
     ports:
       - "3000:3000"
+    volumes:
+      - ../..//src/ui:/app
     depends_on:
       - agent
     env_file:
       - .env
     environment:
-      - REACT_APP_API_SERVER_BASE_URL=http://127.0.0.1:8000/api/v1/chat
+      - REACT_APP_API_SERVER_BASE_URL=http://localhost:8000/api/v1/chat
       - REACT_APP_DESCOPE_PROJECT_ID=${DESCOPE_PROJECT_ID}
+    command: >
+      bash -c "
+        npm start --reload
+      "
     restart: always
 
   agent:
-    image: acuvity/acuvity-chatbot-agent:latest
+    build:
+      context: ../../src/agent
     ports:
       - "8000:8000"
     volumes:
-      - ./configs:/config
+      - ../../src/agent/config:/config
+      - ../../src/agent:/app
     depends_on:
       db:
         condition: service_healthy
@@ -31,6 +40,8 @@ services:
 
   db:
     image: postgres:15-alpine
+    ports:
+      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data/
     env_file:
@@ -48,12 +59,16 @@ services:
 
   mcp-server-fetch:
     image: acuvity/mcp-server-fetch:latest
+    ports:
+      - "8901:8000"
     environment:
       - MINIBRIDGE_LOG_LEVEL=debug
     restart: always
 
   mcp-server-brave-search:
     image: acuvity/mcp-server-brave-search:latest
+    ports:
+      - "8902:8000"
     env_file:
       - .env
     environment:
@@ -63,6 +78,8 @@ services:
 
   mcp-server-github:
     image: acuvity/mcp-server-github:latest
+    ports:
+      - "8903:8000"
     env_file:
       - .env
     environment:
@@ -72,16 +89,31 @@ services:
 
   mcp-server-sequential-thinking:
     image: acuvity/mcp-server-sequential-thinking:latest
+    ports:
+      - "8904:8000"
     environment:
       - MINIBRIDGE_LOG_LEVEL=debug
     restart: always
 
   mcp-server-memory:
     image: acuvity/mcp-server-memory:latest
+    ports:
+      - "8905:8000"
     environment:
       - MINIBRIDGE_LOG_LEVEL=debug
     volumes:
       - memory_data:/data
+    restart: always
+
+  mcp-server-microsoft:
+    image: acuvity/mcp-server-microsoft-graph:latest
+    environment:
+      - MINIBRIDGE_LOG_LEVEL=debug
+      - MCP_SERVER_MICROSOFT_GRAPH_TRANSPORT=sse
+      - MCP_SERVER_MICROSOFT_GRAPH_SERVICE_NAME=mcp-server-microsoft
+      - MCP_SERVER_MICROSOFT_GRAPH_TENANT_ID=${MCP_SERVER_MICROSOFT_GRAPH_TENANT_ID}
+      - MCP_SERVER_MICROSOFT_GRAPH_CLIENT_ID=${MCP_SERVER_MICROSOFT_GRAPH_CLIENT_ID}
+      - MCP_SERVER_MICROSOFT_GRAPH_CLIENT_SECRET=${MCP_SERVER_MICROSOFT_GRAPH_CLIENT_SECRET}
     restart: always
 
 volumes:

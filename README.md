@@ -10,45 +10,17 @@
   git clone <repository-url>
   ```
 
-- Create a `.env` file based on the provided template:
+### Trying out the application with Docker Compose
 
-  ```bash
-  cp .env.template .env
-  ```
+Follow the instructions [here](./deploy/compose/README.md#trying-out-the-application-with-docker)
 
-- Update the environment variables as needed.
+### Deploying this on K8s
 
-### Trying out the application with Docker
+Follow the instructions [here](./deploy/k8s/README.md)
 
-- Start the Docker containers:
+### Developing ui and agent (using Docker compose)
 
-  ```bash
-  docker compose up -d
-  ```
-
-- The `UI` will be available at http://localhost:3000 and the `API` at http://localhost:8000
-
-- Remove all containers and volumes:
-
-  ```bash
-  docker compose down --volumes
-  ```
-
-
-### Deploying this in production internally
-
-- Requirements
-  K8s cluster
-
-### Developing ui and agent
-
-- Start the Docker containers:
-
-  ```bash
-  docker compose -f docker-compose-dev.yml up -d
-  ```
-
-  The local filesystem is mounted in the containers and on changing files the `UI` and `Agent` reload.
+Follow the instructions [here](./deploy/compose/README.md#developing-ui-and-agent)
 
 ## API Endpoints
 

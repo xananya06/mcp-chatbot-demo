@@ -42,8 +42,13 @@ mcpServers:
     host:
   - name: mcp-server-memory
     host:
+  - name: mcp-server-microsoft
+    host:
 
 secrets:
   openai_key:
   anthropic_key:
   descope_project_id:
+
+apex: 
+  enabled: false
