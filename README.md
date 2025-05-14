@@ -8,12 +8,24 @@ This an example chatbot with agentic workflows.
 
 ## Architecture 
 
-<img width="825" alt="mcp-demo-architecture" src="https://github.com/user-attachments/assets/b11ad1ce-bff8-4edf-bf85-8f89aeb0e9da" />
+In this demo, we will have the following components:
+
+- A **Web Interface**, which presents a chat to the user. This is a simple ReactJS application making calls to an Agent
+- An **Agent** uses Anthropic (optionnally, can use other LLMs as by supported by [Fast-agent](https://github.com/evalstate/fast-agent))
+- A **Database** uses a postgres database to store and retrieve chat histories and conversations
+- Some **[Secure MCP servers](https://mcp.acuvity.ai)** which provide additional capabilities to the **Agent**
+
+> [!TIP]
+> Add more Secure MCP Servers as needed to make your Chatbot more powerful!
+
+<img width="819" alt="mcp-demo-architecture" src="https://github.com/user-attachments/assets/2be5c986-afd5-444c-932b-49a7cea26b09" />
+
 
 ### Framework used:
 
-- [fast-agent](https://github.com/evalstate/fast-agent) which supports the maximum features with regards to MCP.
-- [minibridge](https://github.com/acuvity/minibridge) makes it secure and production ready in the [secure MCP servers](https://mcp.acuvity.ai).
+- [Fast-agent](https://github.com/evalstate/fast-agent) which supports the maximum features with regards to MCP.
+- [Minibridge](https://github.com/acuvity/minibridge) makes it secure and production ready in the [secure MCP servers](https://mcp.acuvity.ai).
+- [Descope](https://www.descope.com/) optionnally adds authentication and authorization support.
 
 ### Enterprise Ready MCP servers used:
 
