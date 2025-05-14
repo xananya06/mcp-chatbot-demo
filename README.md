@@ -1,5 +1,23 @@
 # Chatbot example with agentic workflows
 
+## Overview
+
+This an example chatbot with agentic workflows.
+
+### Framework used:
+
+- [fast-agent](https://github.com/evalstate/fast-agent) which supports the maximum features with regards to MCP.
+- [minibridge](https://github.com/acuvity/minibridge) makes it secure and production ready in the [secure MCP servers](https://mcp.acuvity.ai).
+
+### Enterprise Ready MCP servers used:
+
+- mcp-server-fetch [Dockerfile](https://github.com/acuvity/mcp-servers-registry/tree/main/mcp-server-fetch) [Container](https://hub.docker.com/r/acuvity/mcp-server-fetch)
+- mcp-server-brave-search [Dockerfile](https://github.com/acuvity/mcp-servers-registry/tree/main/mcp-server-brave-search) [Container](https://hub.docker.com/r/acuvity/mcp-server-brave-search)
+- mcp-server-github [Dockerfile](https://github.com/acuvity/mcp-servers-registry/tree/main/mcp-server-github) [Container](https://hub.docker.com/r/acuvity/mcp-server-github)
+- mcp-server-sequential-thinking [Dockerfile](https://github.com/acuvity/mcp-servers-registry/tree/main/mcp-server-sequential-thinking) [Container](https://hub.docker.com/r/acuvity/mcp-server-sequential-thinking)
+- mcp-server-memory [Dockerfile](https://github.com/acuvity/mcp-servers-registry/tree/main/mcp-server-memory) [Container](https://hub.docker.com/r/acuvity/mcp-server-memory)
+- mcp-server-microsoft [Dockerfile](https://github.com/acuvity/mcp-servers-registry/tree/main/mcp-server-microsoft) [Container](https://hub.docker.com/r/acuvity/mcp-server-microsoft)
+
 ## Installation and Setup
 
 ### Getting started
