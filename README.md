@@ -4,6 +4,12 @@
 
 This an example chatbot with agentic workflows.
 
+<img width="1499" alt="mcp-demo-ui" src="https://github.com/user-attachments/assets/13303412-8f33-4785-a796-e7efdf1d753e" />
+
+## Architecture 
+
+<img width="825" alt="mcp-demo-architecture" src="https://github.com/user-attachments/assets/b11ad1ce-bff8-4edf-bf85-8f89aeb0e9da" />
+
 ### Framework used:
 
 - [fast-agent](https://github.com/evalstate/fast-agent) which supports the maximum features with regards to MCP.
