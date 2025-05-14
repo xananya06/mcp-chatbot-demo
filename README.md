@@ -13,10 +13,14 @@ In this demo, we will have the following components:
 - A **Web Interface**, which presents a chat to the user. This is a simple ReactJS application making calls to an Agent
 - An **Agent** uses Anthropic (optionnally, can use other LLMs as by supported by [Fast-agent](https://github.com/evalstate/fast-agent))
 - A **Database** uses a postgres database to store and retrieve chat histories and conversations
-- Some **[Secure MCP servers](https://mcp.acuvity.ai)** which provide additional capabilities to the **Agent**
+- Some **[Secure MCP servers](https://mcp.acuvity.ai)** which provide additional capabilities to the **Agent**.
 
 > [!TIP]
 > Add more Secure MCP Servers as needed to make your Chatbot more powerful!
+
+> [!NOTE]
+> Understand the benefits of these MCP Secure Server by visiting our [Github mcp-servers-registry repository](https://github.com/acuvity/mcp-servers-registry)
+
 
 <img width="819" alt="mcp-demo-architecture" src="https://github.com/user-attachments/assets/2be5c986-afd5-444c-932b-49a7cea26b09" />
 
@@ -81,3 +85,4 @@ All certificates for MCP servers already exist in certs folder. You can update t
 ```bash
 pytest
 ```
+
