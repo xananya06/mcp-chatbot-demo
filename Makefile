@@ -39,7 +39,7 @@ mcp-demo-container-push:
 	@cd src/agent && $(CONTAINER_ENGINE) buildx build --attest type=sbom --attest type=provenance --push --platform linux/arm64/v8,linux/amd64 --tag $(OCI_REGISTRY)/acuvity-chatbot-agent:$(CONTAINER_TAG) .
 	@cd src/ui && $(CONTAINER_ENGINE) buildx build --attest type=sbom --attest type=provenance --push --platform linux/arm64/v8,linux/amd64 --tag $(OCI_REGISTRY)/acuvity-chatbot-ui:$(CONTAINER_TAG) .
 
-containers: mcp-servers-container mcp-demo-container
+containers: mcp-demo-container
 
 %-chart-lint:
 	@helm lint deploy/k8s/charts/$*
@@ -53,4 +53,4 @@ deploy/k8s/charts/%: .charts-clean %-chart-lint
 .PHONY: charts
 charts: $(filter-out deploy/k8s/charts/repo%, $(patsubst %/,%, $(filter %/, $(wildcard deploy/k8s/charts/*/))))
 
-push: mcp-servers-container-push mcp-demo-container-push
+push: mcp-demo-container-push
