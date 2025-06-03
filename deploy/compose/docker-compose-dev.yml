@@ -25,6 +25,7 @@ services:
     ports:
       - "8000:8000"
     volumes:
+      - ../../certs:/certs
       - ../../src/agent/config:/config
       - ../../src/agent:/app
     depends_on:
@@ -33,6 +34,7 @@ services:
     env_file:
       - .env
     environment:
+      - AGENT_TLS_CAFILE=/certs/ca-root-cert.pem
       - AGENT_CONFIG_PATH=/config/fastagent.config.yaml
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - DESCOPE_PROJECT_ID=${DESCOPE_PROJECT_ID}

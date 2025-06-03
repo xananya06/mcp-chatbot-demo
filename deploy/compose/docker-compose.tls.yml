@@ -12,13 +12,10 @@ services:
     restart: always
 
   agent:
-    volumes:
-      - ../../certs:/certs
     env_file:
       - .env
     environment:
       - AGENT_CONFIG_PATH=/config/fastagent.tlsconfig.yaml
-      - AGENT_TLS_CAFILE=/certs/ca-root-cert.pem
       - AGENT_TLS_SERVER_ENABLE=true
       - AGENT_TLS_SERVER_CERT=/certs/mcp-chatbot-agent-cert.pem
       - AGENT_TLS_SERVER_KEY=/certs/mcp-chatbot-agent-key.pem
