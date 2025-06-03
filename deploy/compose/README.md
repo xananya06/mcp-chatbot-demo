@@ -51,6 +51,7 @@ In this mode, the following will happen:
 - Start the Docker containers:
 
   ```bash
+  docker compose build --no-cache
   docker compose -f docker-compose-dev.yml up -d
   ```
 
