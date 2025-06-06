@@ -57,7 +57,7 @@ mcpServers:
     host:
   - name: mcp-server-memory
     host:
-  - name: mcp-server-microsoft
+  - name: mcp-server-microsoft-graph
     host:
 
 agent:

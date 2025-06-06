@@ -1,9 +1,9 @@
 # yaml-language-server: $schema=/Users/marcusheese/src/acuvity/backend/pkgs/api/backend/jsonschema/import.json
 
-label: demo-application-mcp-agentic-demo
+label: demo-application-mcp-chatbot-demo
 
 apps:
-  - name: mcp-agentic-demo
+  - name: mcp-chatbot-demo
     description: "An example agentic demo application which uses MCP tools"
     selector:
       - - "@k8s:namespace=mcp-demo"
@@ -11,11 +11,13 @@ apps:
       - - "@source:namespace=/"
         - "@source:name=app-tokens"
         - "@source:type=mtls"
-        - "@apptoken:name=satyam-cluster-2"
-      - - "@source:namespace=/"
-        - "@source:name=app-tokens"
-        - "@source:type=mtls"
-        - "@apptoken:name=marcus-cluster-2"
+        - "@apptoken:name=satyam-cluster-3"
+    tracing: Recording
+    otelReceivers:
+      - endpoint: "127.0.0.1:4317"
+        protocol: GRPC
+      - endpoint: "127.0.0.1:4318"
+        protocol: HTTP
     components:
       - name: ui
         description: "The UI running a react application."
@@ -133,7 +135,7 @@ providers:
     status: Stable
     friendlyName: MCP Demo - Agent
     category: App
-    description: "The agent application of the MCP demo"
+    description: "The agent application of the MCP chatbot demo"
     hosts:
       - name: mcp-demo-agent.mcp-demo.svc.cluster.local
       - name: mcp-demo-agent.mcp-demo
@@ -206,9 +208,9 @@ providers:
       - ref: mcp/output
   - name: mcp-demo-mcp-memory
     status: Stable
-    friendlyName: MCP Demo - MCP Server - GitHub
+    friendlyName: MCP Demo - MCP Server - Memory
     category: App
-    description: "MCP server for GitHub"
+    description: "MCP server for Memory"
     analyzeOutput: true
     hosts:
       - name: mcp-server-memory.mcp-demo.svc.cluster.local
@@ -247,7 +249,7 @@ providers:
     status: Stable
     friendlyName: MCP Demo - MCP Server - Microsoft
     category: App
-    description: "MCP server Miscrosoft"
+    description: "MCP server Microsoft"
     analyzeOutput: true
     hosts:
       - name: mcp-server-microsoft.mcp-demo.svc.cluster.local
