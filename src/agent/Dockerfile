@@ -1,4 +1,4 @@
-FROM python:3.13-slim
+FROM python:3.11-slim
 
 # Install Git and clean up cache to keep the image small
 RUN apt-get update && \
