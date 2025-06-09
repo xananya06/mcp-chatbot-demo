@@ -140,10 +140,16 @@ spec:
           - name: AGENT_CONFIG_PATH
             value: "/config/fastagent.config.yaml"
           {{- if .Values.apex.enabled }}
+          - name: OTEL_ENABLED
+            value: "true"
           - name: OTEL_NO_FILE_EXPORT
             value: "true"
+          - name: OTEL_SERVICE_NAME
+            value: "agent"
+          - name: OTEL_EXPORTER_OTLP_PROTOCOL
+            value: grpc
           - name: OTEL_EXPORTER_OTLP_ENDPOINT
-            value: "http://127.0.0.1:4317/"
+            value: "127.0.0.1:4317"
           - name: REQUESTS_CA_BUNDLE # python requests module
             value: /etc/ssl/certs/custom/ca-bundle.crt
           - name: SSL_CERT_FILE # python httpx module
