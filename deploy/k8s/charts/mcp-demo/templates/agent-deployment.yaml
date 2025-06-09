@@ -150,6 +150,8 @@ spec:
             value: grpc
           - name: OTEL_EXPORTER_OTLP_ENDPOINT
             value: "127.0.0.1:4317"
+          - name: OTEL_EXPORTER_OTLP_INSECURE
+            value: "true"
           - name: REQUESTS_CA_BUNDLE # python requests module
             value: /etc/ssl/certs/custom/ca-bundle.crt
           - name: SSL_CERT_FILE # python httpx module
