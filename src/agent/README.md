@@ -1,4 +1,3 @@
-```markdown
 # FastAPI Chat Backend
 
 A production-ready FastAPI backend that supports a chat API.
@@ -58,5 +57,4 @@ backend/
 ├── .env                 # Environment variables
 ├── Dockerfile           # Docker configuration
 └── requirements.txt     # Python dependencies
-```
 ```
