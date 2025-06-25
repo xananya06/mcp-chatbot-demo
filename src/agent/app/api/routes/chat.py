@@ -73,173 +73,30 @@ def get_conversation_messages(
 
 # AI Tools Discovery Endpoints
 
+
 @router.post("/discover-tools")
 def discover_ai_tools(
-    focus: str = "all",  # "ai_services", "code_editors", "plugins", or "all"
+    request_data: dict,
     db: Session = Depends(get_db),
     current_user_id: int = Depends(auth.get_verified_user_id),
 ):
-    """Discover AI tools by category - AI services, code editors, and plugins"""
-    from app.models.chat import DiscoveredTool
-    from app.services.agent_service import agent_service
+    """Discover AI tools using the new focused discovery system"""
+    from app.services.chat_service import discover_tools
     
-    # Define search strategies for each category
-    search_strategies = {
-        "ai_services": [
-            "AI API services 2024 developers",
-            "machine learning APIs platforms",
-            "AI SaaS tools developers", 
-            "OpenAI alternatives API services",
-            "computer vision APIs",
-            "NLP APIs natural language processing"
-        ],
-        "code_editors": [
-            "AI code editors 2024",
-            "AI-powered IDEs programming",
-            "GitHub Copilot alternatives",
-            "AI coding assistants editors",
-            "smart code completion tools",
-            "AI pair programming tools"
-        ],
-        "plugins": [
-            "VSCode AI extensions plugins",
-            "Chrome AI developer extensions",
-            "JetBrains AI plugins",
-            "Vim AI plugins",
-            "browser AI developer tools",
-            "AI code review plugins"
-        ]
-    }
+    # Extract focus from request data
+    focus = request_data.get("focus", "all")
     
-    if focus == "all":
-        categories_to_search = ["ai_services", "code_editors", "plugins"]
-    else:
-        categories_to_search = [focus] if focus in search_strategies else ["ai_services", "code_editors", "plugins"]
+    # Create a simple request object
+    class FocusRequest:
+        def __init__(self, focus):
+            self.focus = focus
     
-    discovery_prompt = f"""
-    Use sequential thinking to systematically discover AI tools on the internet.
-
-    FOCUS ON THESE CATEGORIES: {', '.join(categories_to_search)}
-    
-    TOOL CATEGORIES:
-    1. AI Services: APIs, platforms, SaaS tools (OpenAI, Anthropic, Hugging Face, etc.)
-    2. Code Editors: AI-powered coding tools (Cursor, GitHub Copilot, Replit, etc.)
-    3. Plugins: AI extensions for existing tools (VSCode extensions, browser plugins, etc.)
-
-    SEARCH STRATEGY:
-    Step 1: Plan comprehensive search across multiple sources
-    Step 2: Search systematically using these queries:
-    """
-    
-    # Add relevant search queries based on focus
-    for category in categories_to_search:
-        discovery_prompt += f"\n    - For {category}: {', '.join(search_strategies[category])}"
-    
-    discovery_prompt += """
-    
-    Step 3: Check these sources:
-    - GitHub repositories and trending
-    - ProductHunt AI tools
-    - Tool directories (stackshare.io, alternativeto.net)
-    - Developer blogs and forums
-    - Company websites and documentation
-    
-    Step 4: Extract detailed information for each tool
-    Step 5: Validate and categorize findings
-    
-    FOR EACH TOOL FOUND, EXTRACT:
-    - Name (exact product name)
-    - Website URL (official website)
-    - Description (what it does, 1-2 sentences)
-    - Tool type (ai_service, code_editor, or plugin)
-    - Category (API, SaaS, VSCode Extension, Chrome Extension, IDE, etc.)
-    - Pricing (Free, Paid, Freemium, Open Source)
-    - Key features (main capabilities)
-    
-    Return ONLY a JSON array in this exact format:
-    [
-        {
-            "name": "GitHub Copilot",
-            "website": "https://github.com/features/copilot",
-            "description": "AI pair programmer that suggests code and entire functions",
-            "tool_type": "code_editor",
-            "category": "IDE Integration",
-            "pricing": "Paid",
-            "features": "Code completion, function generation, chat interface",
-            "confidence": 0.95
-        }
-    ]
-    
-    Focus on finding REAL, ACTIVE tools. Prioritize quality over quantity.
-    Use your web search and fetch tools extensively.
-    """
-    
-    try:
-        response = agent_service.send(discovery_prompt, block=True, timeout=120)
-        
-        # Extract JSON from response
-        json_match = re.search(r'\[.*?\]', response, re.DOTALL)
-        
-        if json_match:
-            try:
-                tools_data = json.loads(json_match.group())
-                stored_tools = []
-                
-                for tool_data in tools_data:
-                    if isinstance(tool_data, dict) and tool_data.get('name'):
-                        # Validate tool_type
-                        tool_type = tool_data.get('tool_type', '').lower()
-                        if tool_type not in ['ai_service', 'code_editor', 'plugin']:
-                            tool_type = 'ai_service'  # default
-                        
-                        tool = DiscoveredTool(
-                            name=tool_data.get('name', ''),
-                            website=tool_data.get('website', ''),
-                            description=tool_data.get('description', ''),
-                            tool_type=tool_type,
-                            category=tool_data.get('category', ''),
-                            pricing=tool_data.get('pricing', ''),
-                            features=tool_data.get('features', ''),
-                            confidence_score=float(tool_data.get('confidence', 0.0)),
-                            source_data=json.dumps(tool_data)
-                        )
-                        db.add(tool)
-                        stored_tools.append(tool_data)
-                
-                db.commit()
-                
-                return {
-                    "success": True,
-                    "tools": stored_tools,
-                    "count": len(stored_tools),
-                    "focus": focus,
-                    "categories_searched": categories_to_search
-                }
-                
-            except json.JSONDecodeError as e:
-                return {
-                    "success": False,
-                    "error": f"Failed to parse JSON: {e}",
-                    "raw_response": response[:1000] + "..." if len(response) > 1000 else response
-                }
-        else:
-            return {
-                "success": False,
-                "error": "No JSON array found in response",
-                "raw_response": response[:1000] + "..." if len(response) > 1000 else response
-            }
-            
-    except Exception as e:
-        return {
-            "success": False,
-            "error": f"Discovery failed: {e}",
-            "tools": []
-        }
-
-
+    request = FocusRequest(focus)
+    result = discover_tools(request, db)
+    return result
 @router.get("/tools")
 def get_discovered_tools(
-    tool_type: Optional[str] = None,  # Filter by ai_service, code_editor, plugin
+    tool_type: Optional[str] = None,  # Filter by any tool type
     category: Optional[str] = None,   # Filter by category
     pricing: Optional[str] = None,    # Filter by pricing model
     limit: int = 100,
@@ -286,6 +143,31 @@ def get_discovered_tools(
             "category": category, 
             "pricing": pricing
         }
+    }
+
+
+@router.get("/tools/categories")
+def get_tool_categories(
+    current_user_id: int = Depends(auth.get_verified_user_id),
+):
+    """Get all available tool categories for discovery"""
+    categories = {
+        "desktop_applications": "Desktop software and applications",
+        "browser_extensions": "Browser extensions and add-ons", 
+        "mobile_apps": "Mobile applications for iOS and Android",
+        "web_applications": "Web-based tools and SaaS platforms",
+        "ai_services": "APIs and cloud AI services",
+        "code_editors": "AI-powered IDEs and code editors",
+        "plugins": "IDE plugins and editor extensions",
+        "creative_tools": "AI tools for art, music, video creation",
+        "business_tools": "CRM, marketing, and enterprise tools",
+        "productivity_tools": "Task management and productivity apps"
+    }
+    
+    return {
+        "categories": categories,
+        "total_categories": len(categories),
+        "usage": "Use any category name as the 'focus' parameter in /discover-tools"
     }
 
 
