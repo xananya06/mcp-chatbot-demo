@@ -46,7 +46,7 @@ class DiscoveredTool(Base):
     description = Column(Text)
     tool_type = Column(String, nullable=False, index=True)  # "ai_service", "code_editor", "plugin"
     category = Column(String)  # "API", "SaaS", "VSCode Extension", "Chrome Extension", etc.
-    pricing = Column(String)  # "Free", "Paid", "Freemium", "Open Source"
+    pricing = Column(Text)  # "Free", "Paid", "Freemium", "Open Source"
     features = Column(Text)  # Key features as text
     confidence_score = Column(Float)
     source_data = Column(Text)  # Raw JSON data from discovery

@@ -86,13 +86,8 @@ def discover_ai_tools(
     # Extract focus from request data
     focus = request_data.get("focus", "all")
     
-    # Create a simple request object
-    class FocusRequest:
-        def __init__(self, focus):
-            self.focus = focus
-    
-    request = FocusRequest(focus)
-    result = discover_tools(request, db)
+    # Call discover_tools with just the focus string
+    result = discover_tools(focus, db)
     return result
 @router.get("/tools")
 def get_discovered_tools(

@@ -1,4 +1,4 @@
-# Complete fixed chat_service.py
+# Complete fixed chat_service.py with pricing enhancement
 
 import json
 import re
@@ -53,38 +53,41 @@ def create_focused_discovery_prompt(categories: List[str], max_tools_per_categor
         "productivity_tools": "Task management, note-taking, and personal productivity applications"
     }
     
+    # Add this instruction block at the beginning of ALL prompts
+    BASE_INSTRUCTION = """CRITICAL: You must return ONLY a valid JSON array. No explanations, no text before or after.
+
+Each tool must be REAL and CURRENTLY AVAILABLE (not hypothetical or future tools).
+Include only tools you are certain exist with working websites.
+
+"""
+    
     if len(categories) == 1:
         category = categories[0]
         category_desc = category_descriptions.get(category, category.replace('_', ' ').title())
         
-        prompt = f"""
-Find {max_tools_per_category * 2} popular AI-powered tools specifically in this category:
+        prompt = f"""{BASE_INSTRUCTION}Find {max_tools_per_category} popular AI-powered tools in this category:
 
 **{category.replace('_', ' ').title()}**: {category_desc}
 
-Focus ONLY on tools that:
-- Are primarily categorized as {category.replace('_', ' ')}
-- Have significant AI/ML capabilities
-- Are actively maintained and popular
-- Are available to the public
+Requirements:
+- Must be real, existing tools (not examples or hypothetical)
+- Must have AI/ML as a core feature
+- Must have a working website
+- Should be actively maintained
 
-Return ONLY a valid JSON array:
-
+Return as JSON array with this exact format:
 [
   {{
-    "name": "Tool Name",
-    "website": "https://example.com",
-    "description": "Brief description of what this tool does",
+    "name": "Actual Tool Name",
+    "website": "https://real-website.com",
+    "description": "What this tool actually does",
     "tool_type": "{category}",
     "category": "Specific Subcategory",
     "pricing": "Free|Paid|Freemium",
-    "features": "Key features separated by commas",
+    "features": "Real features, comma separated",
     "confidence": 0.95
   }}
-]
-
-Return only the JSON array, no other text or explanations.
-"""
+]"""
     else:
         # Multiple categories - limit per category to avoid token limits
         category_list = []
@@ -92,30 +95,61 @@ Return only the JSON array, no other text or explanations.
             desc = category_descriptions.get(cat, cat.replace('_', ' ').title())
             category_list.append(f"- {cat}: {desc}")
         
-        prompt = f"""
-Find 2-3 popular AI tools in each of these categories:
+        prompt = f"""{BASE_INSTRUCTION}Find 2-3 popular AI tools in EACH category:
 
 {chr(10).join(category_list)}
 
-Return ONLY a valid JSON array with tools evenly distributed across categories:
-
-[
-  {{
-    "name": "Tool Name",
-    "website": "https://example.com", 
-    "description": "Brief description",
-    "tool_type": "category_from_above",
-    "category": "Subcategory",
-    "pricing": "Free|Paid|Freemium",
-    "features": "Key features separated by commas",
-    "confidence": 0.95
-  }}
-]
-
-Limit: Maximum 25 tools total. Return only the JSON array.
-"""
+Return ONLY a JSON array. Maximum 25 tools total."""
     
     return prompt
+
+
+def enhance_pricing_info(tools: List[dict]) -> List[dict]:
+    """Enhance tools with detailed pricing information"""
+    
+    # Define detailed pricing for known tools
+    pricing_database = {
+        'grammarly': "Free: Basic writing suggestions (150 limit/month) | Premium: $12/month or $144/year | Business: $15/member/month | Enterprise: Custom pricing",
+        'otter.ai': "Free: 300 minutes/month | Pro: $10/user/month | Business: $20/user/month | Enterprise: Contact sales",
+        'otter': "Free: 300 minutes/month | Pro: $10/user/month | Business: $20/user/month | Enterprise: Contact sales",
+        'notion': "Free: Personal use | Plus: $8/month | Business: $15/user/month | Enterprise: Custom pricing",
+        'merlin': "Free: 102 queries/day | Pro: $19/month (unlimited) | Team: Contact sales",
+        'bardeen': "Free: Unlimited non-premium actions | Pro: $10/month | Business: $15/user/month",
+        'compose ai': "Free: 1,250 words/month | Premium: $9.99/month (25,000 words) | Ultimate: $29.99/month (unlimited)",
+        'compose': "Free: 1,250 words/month | Premium: $9.99/month (25,000 words) | Ultimate: $29.99/month (unlimited)",
+        'liner': "Free: 3 highlights/day | Essential: $8.83/month | Professional: $14.92/month",
+        'toucan': "Free: Limited translations | Plus: $11.99/month | Family: $19.99/month (6 accounts)",
+        'chatgpt': "Free: Unlimited use with GPT-3.5",
+        'writesonic': "Free: 10,000 words/month | Pro: $12/month | Enterprise: Custom pricing"
+    }
+    
+    # For each tool with simple pricing, try to get detailed pricing
+    for tool in tools:
+        current_pricing = tool.get('pricing', '')
+        tool_name_lower = tool.get('name', '').lower()
+        
+        # Check if we have detailed pricing for this tool
+        detailed_pricing = None
+        for key, pricing in pricing_database.items():
+            if key in tool_name_lower:
+                detailed_pricing = pricing
+                break
+        
+        # If we found detailed pricing, use it
+        if detailed_pricing:
+            tool['pricing'] = detailed_pricing
+        # Otherwise, enhance generic pricing types
+        elif current_pricing in ['Free', 'Paid', 'Freemium', 'Open Source']:
+            if current_pricing == 'Freemium':
+                tool['pricing'] = "Free: Limited features | Premium: Check website for current pricing | Enterprise: Contact sales"
+            elif current_pricing == 'Free':
+                tool['pricing'] = "Free: Full access (may have usage limits - check website)"
+            elif current_pricing == 'Paid':
+                tool['pricing'] = "Paid: Check website for current pricing tiers and plans"
+            elif current_pricing == 'Open Source':
+                tool['pricing'] = "Open Source: Free to use (self-hosted or community version available)"
+    
+    return tools
 
 
 def parse_tools_from_response(response: str) -> List[dict]:
@@ -193,6 +227,12 @@ def merge_tool_data(existing_tool: DiscoveredTool, new_data: dict) -> bool:
     new_confidence = new_data.get('confidence', 0)
     if new_confidence > existing_tool.confidence_score:
         existing_tool.confidence_score = new_confidence
+        updated = True
+    
+    # Update pricing if new one is more detailed
+    new_pricing = new_data.get('pricing', '').strip()
+    if new_pricing and len(new_pricing) > len(existing_tool.pricing or ''):
+        existing_tool.pricing = new_pricing
         updated = True
     
     # Merge features (combine old + new)
@@ -278,13 +318,12 @@ def save_discovered_tools_with_deduplication(db: Session, tools: List[dict]) -> 
             "skipped": 0
         }
 
-
-def discover_tools(request: ChatRequest, db: Session) -> Dict[str, Any]:
+def discover_tools(focus: str, db: Session) -> Dict[str, Any]:
     """Main discover tools function with proper focus handling and deduplication"""
     
     try:
-        # Get categories to search based on focus - NOW WORKING CORRECTLY
-        categories_to_search = get_categories_to_search(request.focus)
+        # Get categories to search based on focus
+        categories_to_search = get_categories_to_search(focus)
         
         # Create focused prompt
         prompt = create_focused_discovery_prompt(categories_to_search)
@@ -300,10 +339,13 @@ def discover_tools(request: ChatRequest, db: Session) -> Dict[str, Any]:
                 "error": "No tools could be parsed from AI response",
                 "tools": [],
                 "count": 0,
-                "focus": request.focus,
+                "focus": focus,
                 "categories_searched": categories_to_search,
                 "raw_response": ai_response[:500] + "..." if len(ai_response) > 500 else ai_response
             }
+        
+        # Enhance pricing information
+        discovered_tools = enhance_pricing_info(discovered_tools)
         
         # Save with deduplication
         save_result = save_discovered_tools_with_deduplication(db, discovered_tools)
@@ -312,7 +354,7 @@ def discover_tools(request: ChatRequest, db: Session) -> Dict[str, Any]:
             "success": save_result["success"],
             "tools": discovered_tools,
             "count": len(discovered_tools),
-            "focus": request.focus,  # Now correctly reflects the actual focus
+            "focus": focus,
             "categories_searched": categories_to_search,
             "database_result": save_result
         }
@@ -323,9 +365,10 @@ def discover_tools(request: ChatRequest, db: Session) -> Dict[str, Any]:
             "error": f"Discovery failed: {str(e)}",
             "tools": [],
             "count": 0,
-            "focus": request.focus,
+            "focus": focus,
             "categories_searched": []
         }
+
 
 # Create the chat_service instance that the routes expect
 class ChatService:
