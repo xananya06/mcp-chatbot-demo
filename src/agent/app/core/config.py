@@ -9,7 +9,7 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.trace import set_tracer_provider
 from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 from opentelemetry.instrumentation.threading import ThreadingInstrumentor
-from openinference.instrumentation.mcp import MCPInstrumentor
+# DISABLED: from openinference.instrumentation.mcp import MCPInstrumentor
 
 class Settings(BaseModel):
     PROJECT_NAME: str = "Chat API"
@@ -86,7 +86,7 @@ class Settings(BaseModel):
             set_tracer_provider(provider)
         HTTPXClientInstrumentor().instrument()
         ThreadingInstrumentor().instrument()
-        MCPInstrumentor().instrument()
+        # DISABLED: MCPInstrumentor().instrument()
 
         logger.info("Logger initialized")
 
