@@ -36,6 +36,7 @@ services:
       AGENT_TLS_CAFILE: /certs/ca-root-cert.pem
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       DESCOPE_PROJECT_ID: ${DESCOPE_PROJECT_ID}
+      GITHUB_TOKEN: ${GITHUB_TOKEN}
       AGENT_CONFIG_YAML: |
         # FastAgent Configuration File
 

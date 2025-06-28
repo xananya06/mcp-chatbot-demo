@@ -9,6 +9,8 @@ import re
 from typing import List, Optional
 import time
 from datetime import datetime
+import asyncio
+from app.services.external_data_service import external_data_service
 
 # Create a router for the chat API
 router = APIRouter()
@@ -365,5 +367,236 @@ def run_external_integration(
     return {
         "success": True,
         "message": f"External integration completed: {results['total_saved']} tools added in {len(results['sources_processed'])} sources",
+        "results": results
+    }
+
+@router.post("/external/quick-boost")
+def quick_external_boost(
+    request_data: dict,
+    db: Session = Depends(get_db),
+    current_user_id: int = Depends(auth.get_verified_user_id),
+):
+    """Quick boost to add 2000-3000 tools fast"""
+    
+    boost_target = request_data.get("boost_target", 3000)
+    
+    print(f"⚡ QUICK EXTERNAL BOOST STARTED")
+    print(f"🎯 Target: {boost_target} tools in under 10 minutes")
+    
+    # Run GitHub discovery (fastest and most reliable)
+    github_result = external_data_service.run_sync_github_discovery(boost_target)
+    
+    return {
+        "success": True,
+        "message": f"Quick boost completed: {github_result['total_saved']} tools added in rapid mode",
+        "results": github_result,
+        "boost_mode": "github_rapid",
+        "time_estimate": "5-10 minutes"
+    }
+
+@router.post("/external/massive-discovery")
+def run_massive_external_discovery(
+    request_data: dict,
+    db: Session = Depends(get_db),
+    current_user_id: int = Depends(auth.get_verified_user_id),
+):
+    """Run massive discovery from real external APIs - 10K+ tools"""
+    
+    target_tools = request_data.get("target_tools", 10000)
+    
+    print(f"🌐 Starting massive external API discovery...")
+    results = external_data_service.run_sync_massive_discovery(target_tools)
+    
+    return {
+        "success": True,
+        "message": f"Massive discovery completed: {results['total_saved']} tools added from real APIs",
+        "results": results
+    }
+
+@router.post("/external/github-rapid")
+def run_github_rapid_discovery(
+    request_data: dict,
+    db: Session = Depends(get_db),
+    current_user_id: int = Depends(auth.get_verified_user_id),
+):
+    """Rapid GitHub repository discovery"""
+    
+    target_tools = request_data.get("target_tools", 5000)
+    
+    print(f"🚀 Starting rapid GitHub discovery...")
+    results = external_data_service.run_sync_github_discovery(target_tools)
+    
+    return {
+        "success": True,
+        "message": f"GitHub discovery completed: {results['total_saved']} repositories added",
+        "results": results
+    }
+
+@router.get("/external/status")
+def get_external_discovery_status(
+    current_user_id: int = Depends(auth.get_verified_user_id),
+):
+    """Get status of external discovery capabilities"""
+    
+    return {
+        "available_sources": {
+            "github_api": {
+                "description": "GitHub repository discovery via API",
+                "estimated_tools": "3000-5000",
+                "rate_limit": "5000 requests/hour",
+                "categories": ["Open Source", "AI Tools", "Development"]
+            },
+            "product_hunt": {
+                "description": "Product Hunt tool discovery via web scraping",
+                "estimated_tools": "1000-2000", 
+                "rate_limit": "Respectful scraping",
+                "categories": ["Featured Tools", "AI Products", "Startup Tools"]
+            },
+            "ai_directories": {
+                "description": "AI tool directory scraping",
+                "estimated_tools": "2000-4000",
+                "rate_limit": "Respectful scraping", 
+                "categories": ["AI Tools", "ML Platforms", "SaaS Tools"]
+            }
+        },
+        "discovery_modes": {
+            "massive_discovery": "All sources combined (10K+ tools)",
+            "quick_boost": "GitHub only (fast, 3K tools)",
+            "github_rapid": "GitHub repositories (5K tools)"
+        },
+        "no_deduplication": "Tools are added without deduplication for maximum count",
+        "estimated_total_capacity": "15,000+ tools across all sources"
+    }
+
+@router.post("/external/alternativeto")
+def run_alternativeto_discovery(
+    request_data: dict,
+    db: Session = Depends(get_db),
+    current_user_id: int = Depends(auth.get_verified_user_id),
+):
+    """AlternativeTo tools discovery"""
+    
+    target_tools = request_data.get("target_tools", 3000)
+    
+    print(f"🔄 Starting AlternativeTo discovery...")
+    results = external_data_service.run_sync_alternativeto_discovery(target_tools)
+    
+    return {
+        "success": True,
+        "message": f"AlternativeTo discovery completed: {results['total_saved']} tools added",
+        "results": results
+    }
+
+@router.post("/external/product-hunt")
+def run_product_hunt_discovery(
+    request_data: dict,
+    db: Session = Depends(get_db),
+    current_user_id: int = Depends(auth.get_verified_user_id),
+):
+    """Product Hunt tools discovery"""
+    
+    target_tools = request_data.get("target_tools", 2000)
+    
+    print(f"🏆 Starting Product Hunt discovery...")
+    results = external_data_service.run_sync_product_hunt_discovery(target_tools)
+    
+    return {
+        "success": True,
+        "message": f"Product Hunt discovery completed: {results['total_saved']} tools added",
+        "results": results
+    }
+
+@router.post("/external/directory-scraping")
+def run_directory_scraping_discovery(
+    request_data: dict,
+    db: Session = Depends(get_db),
+    current_user_id: int = Depends(auth.get_verified_user_id),
+):
+    """AI directory scraping discovery"""
+    
+    target_tools = request_data.get("target_tools", 3000)
+    
+    print(f"🕷️ Starting directory scraping discovery...")
+    results = external_data_service.run_sync_directory_scraping(target_tools)
+    
+    return {
+        "success": True,
+        "message": f"Directory scraping completed: {results['total_saved']} tools added",
+        "results": results
+    }
+
+@router.post("/external/chrome-extensions")
+def run_chrome_extensions_discovery(
+    request_data: dict,
+    db: Session = Depends(get_db),
+    current_user_id: int = Depends(auth.get_verified_user_id),
+):
+    """Chrome Web Store extensions discovery"""
+    
+    target_tools = request_data.get("target_tools", 2000)
+    
+    print(f"🌐 Starting Chrome extensions discovery...")
+    results = external_data_service.run_sync_chrome_discovery(target_tools)
+    
+    return {
+        "success": True,
+        "message": f"Chrome extensions discovery completed: {results['total_saved']} extensions added",
+        "results": results
+    }
+
+@router.post("/external/vscode-extensions")
+def run_vscode_extensions_discovery(
+    request_data: dict,
+    db: Session = Depends(get_db),
+    current_user_id: int = Depends(auth.get_verified_user_id),
+):
+    """VS Code Marketplace extensions discovery"""
+    
+    target_tools = request_data.get("target_tools", 1500)
+    
+    print(f"🔧 Starting VS Code extensions discovery...")
+    results = external_data_service.run_sync_vscode_discovery(target_tools)
+    
+    return {
+        "success": True,
+        "message": f"VS Code extensions discovery completed: {results['total_saved']} extensions added",
+        "results": results
+    }
+
+@router.post("/external/npm-packages")
+def run_npm_packages_discovery(
+    request_data: dict,
+    db: Session = Depends(get_db),
+    current_user_id: int = Depends(auth.get_verified_user_id),
+):
+    """NPM packages discovery"""
+    
+    target_tools = request_data.get("target_tools", 2000)
+    
+    print(f"📦 Starting NPM packages discovery...")
+    results = external_data_service.run_sync_npm_discovery(target_tools)
+    
+    return {
+        "success": True,
+        "message": f"NPM packages discovery completed: {results['total_saved']} packages added",
+        "results": results
+    }
+
+@router.post("/external/pypi-packages")
+def run_pypi_packages_discovery(
+    request_data: dict,
+    db: Session = Depends(get_db),
+    current_user_id: int = Depends(auth.get_verified_user_id),
+):
+    """PyPI packages discovery"""
+    
+    target_tools = request_data.get("target_tools", 1500)
+    
+    print(f"🐍 Starting PyPI packages discovery...")
+    results = external_data_service.run_sync_pypi_discovery(target_tools)
+    
+    return {
+        "success": True,
+        "message": f"PyPI packages discovery completed: {results['total_saved']} packages added",
         "results": results
     }

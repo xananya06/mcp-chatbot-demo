@@ -1,3 +1,4 @@
+import asyncio
 import time
 from datetime import datetime
 from typing import List, Dict, Any
@@ -7,297 +8,336 @@ from sqlalchemy.orm import Session
 from app.db.database import SessionLocal
 from app.services.chat_service import save_discovered_tools_with_deduplication
 
+# Import our new real API service
+from app.services.real_external_api_service import RealExternalAPIService
+
 logger = logging.getLogger(__name__)
 
 class ExternalDataService:
-    """External data integration for rapid tool discovery"""
+    """Enhanced External data integration with REAL API sources"""
     
-    def integrate_external_sources(self, target_tools: int = 2000) -> Dict[str, Any]:
-        """Integrate tools from external sources - much faster than AI discovery"""
+    def __init__(self):
+        self.real_api_service = RealExternalAPIService()
+        
+    async def integrate_external_sources(self, target_tools: int = 10000) -> Dict[str, Any]:
+        """Main integration pipeline with real external APIs - NO DEDUPLICATION"""
         
         results = {
-            "integration_id": f"external_{int(time.time())}",
+            "integration_id": f"real_external_{int(time.time())}",
             "start_time": datetime.utcnow().isoformat(),
             "target_tools": target_tools,
             "total_discovered": 0,
             "total_saved": 0,
-            "sources_processed": []
+            "sources_processed": [],
+            "processing_mode": "real_apis_no_dedup"
         }
         
-        print(f"🌐 External Data Integration Started")
-        print(f"🎯 Target: {target_tools} tools")
+        print(f"🌐 REAL EXTERNAL API INTEGRATION STARTED")
+        print(f"🎯 Target: {target_tools} tools from real external sources")
+        print(f"⚡ Mode: NO DEDUPLICATION for maximum tool count")
         
-        # High-quality external tool sources (simulated for demo)
-        external_sources = [
-            self._get_product_hunt_tools(),
-            self._get_github_awesome_tools(), 
-            self._get_ai_directory_tools(),
-            self._get_enterprise_tools(),
-            self._get_developer_tools(),
-            self._get_creative_tools()
-        ]
-        
-        db = SessionLocal()
-        
-        try:
-            for i, (source_name, tools) in enumerate(external_sources, 1):
-                if results["total_saved"] >= target_tools:
-                    break
-                    
-                print(f"\n📡 Source {i}/6: {source_name}")
-                source_start = time.time()
-                
-                if tools:
-                    save_result = save_discovered_tools_with_deduplication(db, tools)
-                    source_time = time.time() - source_start
-                    
-                    saved = save_result.get("saved", 0)
-                    updated = save_result.get("updated", 0)
-                    
-                    results["total_discovered"] += len(tools)
-                    results["total_saved"] += saved
-                    
-                    results["sources_processed"].append({
-                        "source": source_name,
-                        "tools_found": len(tools),
-                        "tools_saved": saved,
-                        "tools_updated": updated,
-                        "processing_time": round(source_time, 2)
-                    })
-                    
-                    print(f"  ✅ {source_name}: {saved} new, {updated} updated ({source_time:.1f}s)")
-                else:
-                    print(f"  ❌ {source_name}: No tools available")
-                
-                # Minimal delay between sources
-                time.sleep(0.5)
-                
-        finally:
-            db.close()
+        # Use the real API service
+        async with self.real_api_service as api_service:
+            real_results = await api_service.massive_discovery_pipeline(target_tools)
+            
+            # Merge results
+            results.update({
+                "total_discovered": real_results.get("total_discovered", 0),
+                "total_saved": real_results.get("total_saved", 0),
+                "sources_processed": real_results.get("sources_processed", []),
+                "errors": real_results.get("errors", [])
+            })
         
         results["end_time"] = datetime.utcnow().isoformat()
         
-        print(f"\n🎊 External Integration Complete!")
+        print(f"\n🎊 REAL API Integration Complete!")
         print(f"📈 Results: {results['total_saved']} new tools added")
         print(f"📊 Sources processed: {len(results['sources_processed'])}")
         
         return results
     
-    def _get_product_hunt_tools(self) -> tuple:
-        """Simulated Product Hunt AI tools"""
-        tools = [
-            {
-                "name": "Runway ML",
-                "website": "https://runwayml.com",
-                "description": "AI-powered creative suite for video, image, and text generation",
-                "tool_type": "ai_video_tools",
-                "category": "Creative AI",
-                "pricing": "Freemium",
-                "features": "Video generation, Image editing, Text to video, Green screen removal",
-                "confidence": 0.95
-            },
-            {
-                "name": "Perplexity AI",
-                "website": "https://perplexity.ai",
-                "description": "AI-powered search engine and research assistant with real-time data",
-                "tool_type": "ai_research_tools",
-                "category": "AI Search",
-                "pricing": "Freemium",
-                "features": "AI search, Real-time data, Source citations, Research assistance",
-                "confidence": 0.93
-            },
-            {
-                "name": "Claude",
-                "website": "https://claude.ai",
-                "description": "Advanced AI assistant for analysis, writing, and conversation",
-                "tool_type": "ai_writing_tools",
-                "category": "AI Assistant",
-                "pricing": "Freemium",
-                "features": "Long conversations, Document analysis, Code generation, Safety focused",
-                "confidence": 0.97
-            },
-            {
-                "name": "Eleven Labs",
-                "website": "https://elevenlabs.io",
-                "description": "AI voice generation and speech synthesis platform",
-                "tool_type": "ai_audio_tools",
-                "category": "Voice AI",
-                "pricing": "Freemium",
-                "features": "Voice cloning, Text to speech, Multiple languages, Real-time voice",
-                "confidence": 0.94
-            },
-            {
-                "name": "Replicate",
-                "website": "https://replicate.com",
-                "description": "Run machine learning models in the cloud with simple API",
-                "tool_type": "ai_services",
-                "category": "Cloud ML",
-                "pricing": "Pay per use",
-                "features": "Model hosting, API access, Scalable inference, Version control",
-                "confidence": 0.91
+    async def rapid_github_discovery(self, target_tools: int = 5000) -> Dict[str, Any]:
+        """Rapid GitHub-only discovery for maximum tool volume"""
+        
+        results = {
+            "discovery_id": f"github_rapid_{int(time.time())}",
+            "start_time": datetime.utcnow().isoformat(),
+            "target_tools": target_tools,
+            "total_saved": 0,
+            "processing_mode": "github_only_rapid"
+        }
+        
+        print(f"🚀 RAPID GITHUB DISCOVERY")
+        print(f"🎯 Target: {target_tools} tools from GitHub only")
+        
+        async with self.real_api_service as api_service:
+            github_tools = await api_service._discover_github_ai_tools(target_tools)
+            
+            if github_tools:
+                db = SessionLocal()
+                try:
+                    # Save without deduplication for speed
+                    save_result = self._save_tools_no_dedup(db, github_tools)
+                    results["total_saved"] = save_result.get("saved", 0)
+                finally:
+                    db.close()
+        
+        results["end_time"] = datetime.utcnow().isoformat()
+        print(f"✅ GitHub Rapid Discovery: {results['total_saved']} tools added")
+        
+        return results
+
+    async def product_hunt_discovery(self, target_tools: int = 2000) -> Dict[str, Any]:
+        """Product Hunt focused discovery"""
+        
+        results = {
+            "discovery_id": f"ph_{int(time.time())}",
+            "start_time": datetime.utcnow().isoformat(),
+            "target_tools": target_tools,
+            "total_saved": 0
+        }
+        
+        print(f"🏆 PRODUCT HUNT DISCOVERY")
+        
+        async with self.real_api_service as api_service:
+            ph_tools = await api_service._discover_product_hunt_tools(target_tools)
+            
+            if ph_tools:
+                db = SessionLocal()
+                try:
+                    save_result = self._save_tools_no_dedup(db, ph_tools)
+                    results["total_saved"] = save_result.get("saved", 0)
+                finally:
+                    db.close()
+        
+        results["end_time"] = datetime.utcnow().isoformat()
+        print(f"✅ Product Hunt Discovery: {results['total_saved']} tools added")
+        
+        return results
+
+    async def alternativeto_discovery(self, target_tools: int = 3000) -> Dict[str, Any]:
+        """AlternativeTo focused discovery"""
+        
+        results = {
+            "discovery_id": f"alt_{int(time.time())}",
+            "start_time": datetime.utcnow().isoformat(), 
+            "target_tools": target_tools,
+            "total_saved": 0
+        }
+        
+        print(f"🔄 ALTERNATIVETO DISCOVERY")
+        
+        async with self.real_api_service as api_service:
+            alt_tools = await api_service._discover_alternativeto_tools(target_tools)
+            
+            if alt_tools:
+                db = SessionLocal()
+                try:
+                    save_result = self._save_tools_no_dedup(db, alt_tools)
+                    results["total_saved"] = save_result.get("saved", 0)
+                finally:
+                    db.close()
+        
+        results["end_time"] = datetime.utcnow().isoformat()
+        print(f"✅ AlternativeTo Discovery: {results['total_saved']} tools added")
+        
+        return results
+
+    async def chrome_extensions_discovery(self, target_tools: int = 2000) -> Dict[str, Any]:
+        """Chrome extensions focused discovery"""
+        
+        results = {
+            "discovery_id": f"chrome_{int(time.time())}",
+            "start_time": datetime.utcnow().isoformat(),
+            "target_tools": target_tools,
+            "total_saved": 0
+        }
+        
+        print(f"🌐 CHROME EXTENSIONS DISCOVERY")
+        
+        async with self.real_api_service as api_service:
+            chrome_tools = await api_service._discover_chrome_extensions(target_tools)
+            
+            if chrome_tools:
+                db = SessionLocal()
+                try:
+                    save_result = self._save_tools_no_dedup(db, chrome_tools)
+                    results["total_saved"] = save_result.get("saved", 0)
+                finally:
+                    db.close()
+        
+        results["end_time"] = datetime.utcnow().isoformat()
+        print(f"✅ Chrome Extensions Discovery: {results['total_saved']} tools added")
+        
+        return results
+
+    async def vscode_extensions_discovery(self, target_tools: int = 1500) -> Dict[str, Any]:
+        """VS Code extensions focused discovery"""
+        
+        results = {
+            "discovery_id": f"vscode_{int(time.time())}",
+            "start_time": datetime.utcnow().isoformat(),
+            "target_tools": target_tools,
+            "total_saved": 0
+        }
+        
+        print(f"🔧 VS CODE EXTENSIONS DISCOVERY")
+        
+        async with self.real_api_service as api_service:
+            vscode_tools = await api_service._discover_vscode_extensions(target_tools)
+            
+            if vscode_tools:
+                db = SessionLocal()
+                try:
+                    save_result = self._save_tools_no_dedup(db, vscode_tools)
+                    results["total_saved"] = save_result.get("saved", 0)
+                finally:
+                    db.close()
+        
+        results["end_time"] = datetime.utcnow().isoformat()
+        print(f"✅ VS Code Extensions Discovery: {results['total_saved']} tools added")
+        
+        return results
+
+    async def npm_packages_discovery(self, target_tools: int = 2000) -> Dict[str, Any]:
+        """NPM packages focused discovery"""
+        
+        results = {
+            "discovery_id": f"npm_{int(time.time())}",
+            "start_time": datetime.utcnow().isoformat(),
+            "target_tools": target_tools,
+            "total_saved": 0
+        }
+        
+        print(f"📦 NPM PACKAGES DISCOVERY")
+        
+        async with self.real_api_service as api_service:
+            npm_tools = await api_service._discover_npm_packages(target_tools)
+            
+            if npm_tools:
+                db = SessionLocal()
+                try:
+                    save_result = self._save_tools_no_dedup(db, npm_tools)
+                    results["total_saved"] = save_result.get("saved", 0)
+                finally:
+                    db.close()
+        
+        results["end_time"] = datetime.utcnow().isoformat()
+        print(f"✅ NPM Packages Discovery: {results['total_saved']} tools added")
+        
+        return results
+
+    async def pypi_packages_discovery(self, target_tools: int = 1500) -> Dict[str, Any]:
+        """PyPI packages focused discovery"""
+        
+        results = {
+            "discovery_id": f"pypi_{int(time.time())}",
+            "start_time": datetime.utcnow().isoformat(),
+            "target_tools": target_tools,
+            "total_saved": 0
+        }
+        
+        print(f"🐍 PYPI PACKAGES DISCOVERY")
+        
+        async with self.real_api_service as api_service:
+            pypi_tools = await api_service._discover_pypi_packages(target_tools)
+            
+            if pypi_tools:
+                db = SessionLocal()
+                try:
+                    save_result = self._save_tools_no_dedup(db, pypi_tools)
+                    results["total_saved"] = save_result.get("saved", 0)
+                finally:
+                    db.close()
+        
+        results["end_time"] = datetime.utcnow().isoformat()
+        print(f"✅ PyPI Packages Discovery: {results['total_saved']} tools added")
+        
+        return results
+
+    def _save_tools_no_dedup(self, db: Session, tools: List[dict]) -> Dict[str, Any]:
+        """Save tools without deduplication for maximum volume"""
+        
+        from app.models.chat import DiscoveredTool
+        
+        saved_count = 0
+        errors = []
+        
+        for tool_data in tools:
+            try:
+                # Create new tool without checking for existing
+                new_tool = DiscoveredTool(
+                    name=tool_data.get('name', '').strip(),
+                    website=tool_data.get('website', '').strip(),
+                    description=tool_data.get('description', '').strip(),
+                    tool_type=tool_data.get('tool_type', '').strip(),
+                    category=tool_data.get('category', '').strip(),
+                    pricing=tool_data.get('pricing', '').strip(),
+                    features=tool_data.get('features', '').strip(),
+                    confidence_score=tool_data.get('confidence', 0.0),
+                    source_data=tool_data.get('source_data', '')
+                )
+                db.add(new_tool)
+                saved_count += 1
+                
+                # Commit in batches for performance
+                if saved_count % 100 == 0:
+                    db.commit()
+                    
+            except Exception as e:
+                errors.append(f"Error saving {tool_data.get('name', 'unknown')}: {str(e)}")
+        
+        try:
+            db.commit()
+            return {
+                "success": True,
+                "saved": saved_count,
+                "updated": 0,
+                "skipped": 0,
+                "errors": errors
             }
-        ]
-        return ("Product Hunt AI Tools", tools)
-    
-    def _get_github_awesome_tools(self) -> tuple:
-        """Simulated GitHub Awesome lists tools"""
-        tools = [
-            {
-                "name": "Hugging Face",
-                "website": "https://huggingface.co",
-                "description": "Platform for machine learning models, datasets, and applications",
-                "tool_type": "ai_services",
-                "category": "ML Platform",
-                "pricing": "Freemium",
-                "features": "Model hosting, Datasets, Spaces, Community, Enterprise solutions",
-                "confidence": 0.96
-            },
-            {
-                "name": "Stable Diffusion",
-                "website": "https://stability.ai/stable-diffusion",
-                "description": "Open-source AI model for generating images from text descriptions",
-                "tool_type": "ai_image_generation",
-                "category": "Open Source",
-                "pricing": "Open Source",
-                "features": "Text to image, Local deployment, Customizable, Commercial use",
-                "confidence": 0.92
-            },
-            {
-                "name": "Ollama",
-                "website": "https://ollama.ai",
-                "description": "Run large language models locally on your machine",
-                "tool_type": "ai_services",
-                "category": "Local AI",
-                "pricing": "Open Source",
-                "features": "Local LLM hosting, Multiple models, API access, Privacy focused",
-                "confidence": 0.89
-            },
-            {
-                "name": "LangChain",
-                "website": "https://langchain.com",
-                "description": "Framework for developing applications with language models",
-                "tool_type": "ai_coding_tools",
-                "category": "Development Framework",
-                "pricing": "Open Source",
-                "features": "LLM framework, Chain building, Memory, Agent development",
-                "confidence": 0.93
+        except Exception as e:
+            db.rollback()
+            return {
+                "success": False,
+                "error": f"Database commit failed: {str(e)}",
+                "saved": 0,
+                "updated": 0,
+                "skipped": 0
             }
-        ]
-        return ("GitHub Awesome Lists", tools)
-    
-    def _get_ai_directory_tools(self) -> tuple:
-        """Simulated AI directory tools"""
-        tools = [
-            {
-                "name": "Character.AI",
-                "website": "https://character.ai",
-                "description": "Create and chat with AI characters for entertainment and learning",
-                "tool_type": "ai_customer_service",
-                "category": "Conversational AI",
-                "pricing": "Freemium",
-                "features": "Character creation, Roleplay, Educational chat, Community",
-                "confidence": 0.88
-            },
-            {
-                "name": "Synthesia",
-                "website": "https://synthesia.io",
-                "description": "AI video generation platform with realistic avatars",
-                "tool_type": "ai_video_tools",
-                "category": "Avatar Video",
-                "pricing": "Paid",
-                "features": "AI avatars, Video generation, Multilingual, Custom avatars",
-                "confidence": 0.90
-            },
-            {
-                "name": "Luma AI",
-                "website": "https://lumalabs.ai",
-                "description": "AI-powered 3D content creation and neural rendering",
-                "tool_type": "ai_3d_modeling",
-                "category": "3D AI",
-                "pricing": "Freemium",
-                "features": "3D capture, Neural rendering, AR/VR content, Mobile app",
-                "confidence": 0.87
-            }
-        ]
-        return ("AI Directories", tools)
-    
-    def _get_enterprise_tools(self) -> tuple:
-        """Enterprise AI tools"""
-        tools = [
-            {
-                "name": "Microsoft Copilot",
-                "website": "https://copilot.microsoft.com",
-                "description": "AI assistant integrated across Microsoft 365 applications",
-                "tool_type": "productivity_tools",
-                "category": "Enterprise AI",
-                "pricing": "Enterprise",
-                "features": "Office integration, Document assistance, Email help, Data analysis",
-                "confidence": 0.98
-            },
-            {
-                "name": "Salesforce Einstein",
-                "website": "https://salesforce.com/products/einstein",
-                "description": "AI platform for CRM and business automation",
-                "tool_type": "business_tools",
-                "category": "CRM AI",
-                "pricing": "Enterprise",
-                "features": "Sales automation, Lead scoring, Customer insights, Predictive analytics",
-                "confidence": 0.95
-            }
-        ]
-        return ("Enterprise Solutions", tools)
-    
-    def _get_developer_tools(self) -> tuple:
-        """Developer AI tools"""
-        tools = [
-            {
-                "name": "Cursor",
-                "website": "https://cursor.sh",
-                "description": "AI-powered code editor built for productivity",
-                "tool_type": "code_editors",
-                "category": "AI Code Editor",
-                "pricing": "Freemium",
-                "features": "AI code completion, Chat with codebase, Code generation, Debugging",
-                "confidence": 0.92
-            },
-            {
-                "name": "Replit AI",
-                "website": "https://replit.com/ai",
-                "description": "AI coding assistant integrated into online development environment",
-                "tool_type": "ai_coding_tools",
-                "category": "Cloud IDE",
-                "pricing": "Freemium",
-                "features": "Code generation, In-browser coding, Collaborative development, AI chat",
-                "confidence": 0.89
-            }
-        ]
-        return ("Developer Tools", tools)
-    
-    def _get_creative_tools(self) -> tuple:
-        """Creative AI tools"""
-        tools = [
-            {
-                "name": "Adobe Firefly",
-                "website": "https://firefly.adobe.com",
-                "description": "AI-powered creative tools integrated with Adobe Creative Suite",
-                "tool_type": "creative_tools",
-                "category": "Creative Suite AI",
-                "pricing": "Freemium",
-                "features": "Generative fill, Text effects, Vector generation, Commercial safe",
-                "confidence": 0.94
-            },
-            {
-                "name": "Figma AI",
-                "website": "https://figma.com",
-                "description": "AI-powered design tools for UI/UX and collaboration",
-                "tool_type": "creative_tools",
-                "category": "Design AI",
-                "pricing": "Freemium",
-                "features": "Auto layout, Design suggestions, Component generation, Collaborative design",
-                "confidence": 0.91
-            }
-        ]
-        return ("Creative Tools", tools)
+
+    # Sync wrappers for FastAPI
+    def run_sync_massive_discovery(self, target_tools: int = 10000) -> Dict[str, Any]:
+        """Synchronous wrapper for async massive discovery"""
+        return asyncio.run(self.integrate_external_sources(target_tools))
+
+    def run_sync_github_discovery(self, target_tools: int = 5000) -> Dict[str, Any]:
+        """Synchronous wrapper for GitHub discovery"""
+        return asyncio.run(self.rapid_github_discovery(target_tools))
+
+    def run_sync_product_hunt_discovery(self, target_tools: int = 2000) -> Dict[str, Any]:
+        """Synchronous wrapper for Product Hunt discovery"""
+        return asyncio.run(self.product_hunt_discovery(target_tools))
+
+    def run_sync_alternativeto_discovery(self, target_tools: int = 3000) -> Dict[str, Any]:
+        """Synchronous wrapper for AlternativeTo discovery"""
+        return asyncio.run(self.alternativeto_discovery(target_tools))
+
+    def run_sync_chrome_discovery(self, target_tools: int = 2000) -> Dict[str, Any]:
+        """Synchronous wrapper for Chrome discovery"""
+        return asyncio.run(self.chrome_extensions_discovery(target_tools))
+
+    def run_sync_vscode_discovery(self, target_tools: int = 1500) -> Dict[str, Any]:
+        """Synchronous wrapper for VS Code discovery"""
+        return asyncio.run(self.vscode_extensions_discovery(target_tools))
+
+    def run_sync_npm_discovery(self, target_tools: int = 2000) -> Dict[str, Any]:
+        """Synchronous wrapper for NPM discovery"""
+        return asyncio.run(self.npm_packages_discovery(target_tools))
+
+    def run_sync_pypi_discovery(self, target_tools: int = 1500) -> Dict[str, Any]:
+        """Synchronous wrapper for PyPI discovery"""
+        return asyncio.run(self.pypi_packages_discovery(target_tools))
 
 # Global service instance
 external_data_service = ExternalDataService()
