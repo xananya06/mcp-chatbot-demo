@@ -7,6 +7,8 @@ from app.api.auth import auth
 import json
 import re
 from typing import List, Optional
+import time
+from datetime import datetime
 
 # Create a router for the chat API
 router = APIRouter()
@@ -141,12 +143,33 @@ def get_discovered_tools(
     }
 
 
+# REPLACE the existing @router.get("/tools/categories") endpoint in your chat.py with this:
+
 @router.get("/tools/categories")
 def get_tool_categories(
     current_user_id: int = Depends(auth.get_verified_user_id),
 ):
-    """Get all available tool categories for discovery"""
+    """Get all available tool categories for discovery - ENHANCED VERSION"""
+    
+    # Enhanced categories with descriptions
     categories = {
+        # New AI-specific categories
+        "ai_writing_tools": "AI writing assistants and content creation tools",
+        "ai_image_generation": "AI image and art generation tools", 
+        "ai_video_tools": "AI video creation and editing tools",
+        "ai_audio_tools": "AI audio and music generation tools",
+        "ai_coding_tools": "AI coding assistants and development tools",
+        "ai_data_analysis": "AI data analysis and visualization tools",
+        "ai_marketing_tools": "AI marketing and advertising tools",
+        "ai_customer_service": "AI customer support and chatbot tools",
+        "ai_hr_tools": "AI human resources and recruitment tools",
+        "ai_finance_tools": "AI finance and trading tools",
+        "ai_education_tools": "AI education and learning tools",
+        "ai_research_tools": "AI research and academic tools",
+        "ai_3d_modeling": "AI 3D modeling and design tools",
+        "ai_gaming_tools": "AI gaming and entertainment tools",
+        
+        # Keep existing categories
         "desktop_applications": "Desktop software and applications",
         "browser_extensions": "Browser extensions and add-ons", 
         "mobile_apps": "Mobile applications for iOS and Android",
@@ -162,6 +185,12 @@ def get_tool_categories(
     return {
         "categories": categories,
         "total_categories": len(categories),
+        "new_categories": [
+            "ai_writing_tools", "ai_image_generation", "ai_video_tools", "ai_audio_tools",
+            "ai_coding_tools", "ai_data_analysis", "ai_marketing_tools", "ai_customer_service",
+            "ai_hr_tools", "ai_finance_tools", "ai_education_tools", "ai_research_tools",
+            "ai_3d_modeling", "ai_gaming_tools"
+        ],
         "usage": "Use any category name as the 'focus' parameter in /discover-tools"
     }
 
@@ -194,4 +223,147 @@ def get_tools_statistics(
         "total_tools": total_count,
         "by_type": {stat.tool_type: stat.count for stat in type_stats},
         "by_pricing": {stat.pricing: stat.count for stat in pricing_stats}
+    }
+
+@router.post("/pipeline/intensive")
+def run_intensive_pipeline(
+    request_data: dict,
+    db: Session = Depends(get_db),
+    current_user_id: int = Depends(auth.get_verified_user_id),
+):
+    """Run intensive discovery pipeline for rapid scaling"""
+    
+    target_tools = request_data.get("target_tools", 300)
+    
+    # Import and run the pipeline
+    from app.services.discovery_pipeline import discovery_pipeline
+    
+    print(f"🚀 Starting intensive discovery pipeline...")
+    results = discovery_pipeline.run_intensive_discovery(target_tools)
+    
+    return {
+        "success": True,
+        "message": f"Intensive pipeline completed: {results['total_saved']} new tools discovered",
+        "pipeline_results": results
+    }
+@router.post("/discover-tools/batch")
+def batch_discover_tools(
+    request_data: dict,
+    db: Session = Depends(get_db),
+    current_user_id: int = Depends(auth.get_verified_user_id),
+):
+    """Fast batch discovery across multiple categories"""
+    
+    categories = request_data.get("categories", [
+        "ai_marketing_tools", "ai_hr_tools", "ai_finance_tools"
+    ])
+    delay_seconds = request_data.get("delay_seconds", 3)
+    
+    results = {
+        "batch_id": f"batch_{int(time.time())}",
+        "total_saved": 0,
+        "total_updated": 0,
+        "categories_processed": 0,
+        "category_results": []
+    }
+    
+    print(f"🔄 Fast batch starting for {len(categories)} categories...")
+    
+    for i, category in enumerate(categories):
+        print(f"Processing {i+1}/{len(categories)}: {category}")
+        
+        try:
+            from app.services.chat_service import discover_tools
+            result = discover_tools(category, db)
+            
+            if result.get("success"):
+                saved = result.get("database_result", {}).get("saved", 0)
+                updated = result.get("database_result", {}).get("updated", 0)
+                
+                results["total_saved"] += saved
+                results["total_updated"] += updated
+                results["categories_processed"] += 1
+                
+                print(f"  ✅ {category}: {saved} saved, {updated} updated")
+                
+                results["category_results"].append({
+                    "category": category,
+                    "tools_saved": saved,
+                    "tools_updated": updated
+                })
+            else:
+                print(f"  ❌ {category}: {result.get('error', 'Failed')}")
+            
+            if i < len(categories) - 1:
+                time.sleep(delay_seconds)
+                
+        except Exception as e:
+            print(f"  💥 {category}: {str(e)}")
+    
+    return {
+        "success": True,
+        "message": f"Batch completed: {results['total_saved']} new tools",
+        "results": results
+    }
+@router.post("/pipeline/mega")
+def run_mega_pipeline(
+    request_data: dict,
+    db: Session = Depends(get_db),
+    current_user_id: int = Depends(auth.get_verified_user_id),
+):
+    """Run mega scaling pipeline for 1000s of tools"""
+    
+    target = request_data.get("target_tools", 2000)
+    
+    from app.services.discovery_pipeline import discovery_pipeline
+    
+    print(f"🚀 Starting mega scaling pipeline...")
+    results = discovery_pipeline.run_mega_scaling_pipeline(target)
+    
+    return {
+        "success": True,
+        "message": f"Mega pipeline completed: {results['total_saved']} tools added",
+        "results": results
+    }
+
+@router.post("/pipeline/turbo")
+def run_turbo_pipeline(
+    request_data: dict,
+    db: Session = Depends(get_db),
+    current_user_id: int = Depends(auth.get_verified_user_id),
+):
+    """Turbo discovery pipeline with parallel processing"""
+    
+    target_tools = request_data.get("target_tools", 2000)
+    
+    from app.services.discovery_pipeline import discovery_pipeline
+    
+    print(f"🚀 Starting turbo discovery pipeline...")
+    results = discovery_pipeline.run_turbo_discovery(target_tools)
+    
+    return {
+        "success": True,
+        "message": f"Turbo pipeline completed: {results['total_saved']} new tools discovered in {results.get('total_processing_time', 0):.1f}s",
+        "results": results
+    }
+
+@router.post("/pipeline/external")
+def run_external_integration(
+    request_data: dict,
+    db: Session = Depends(get_db),
+    current_user_id: int = Depends(auth.get_verified_user_id),
+):
+    """External data integration pipeline for rapid tool discovery"""
+    
+    target_tools = request_data.get("target_tools", 1500)
+    
+    from app.services.external_data_service import external_data_service
+    
+    print(f"🌐 Starting external data integration...")
+    results = external_data_service.integrate_external_sources(target_tools)
+    
+    return {
+        "success": True,
+        "message": f"External integration completed: {results['total_saved']} tools added in {len(results['sources_processed'])} sources",
+        "results": results
     }

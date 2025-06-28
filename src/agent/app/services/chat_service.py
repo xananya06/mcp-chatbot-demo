@@ -1,4 +1,5 @@
-# Complete fixed chat_service.py with pricing enhancement
+# Complete enhanced chat_service.py file
+# REPLACE your entire src/agent/app/services/chat_service.py with this content
 
 import json
 import re
@@ -12,10 +13,27 @@ from app.services.agent_service import agent_service
 from app.schemas.chat import ChatRequest
 
 def get_categories_to_search(focus: str) -> List[str]:
-    """Get categories to search based on focus parameter - FIXED VERSION"""
+    """Get categories to search based on focus parameter - ENHANCED VERSION"""
     
-    # Map focus values to specific categories
+    # Enhanced focus mapping with more AI-specific categories
     focus_mapping = {
+        # New AI-specific categories
+        "ai_writing_tools": ["ai_writing_tools"],
+        "ai_image_generation": ["ai_image_generation"], 
+        "ai_video_tools": ["ai_video_tools"],
+        "ai_audio_tools": ["ai_audio_tools"],
+        "ai_coding_tools": ["ai_coding_tools"],
+        "ai_data_analysis": ["ai_data_analysis"],
+        "ai_marketing_tools": ["ai_marketing_tools"],
+        "ai_customer_service": ["ai_customer_service"],
+        "ai_hr_tools": ["ai_hr_tools"],
+        "ai_finance_tools": ["ai_finance_tools"],
+        "ai_education_tools": ["ai_education_tools"],
+        "ai_research_tools": ["ai_research_tools"],
+        "ai_3d_modeling": ["ai_3d_modeling"],
+        "ai_gaming_tools": ["ai_gaming_tools"],
+        
+        # Keep existing categories for backward compatibility
         "desktop_applications": ["desktop_applications"],
         "browser_extensions": ["browser_extensions"], 
         "mobile_apps": ["mobile_apps"],
@@ -26,34 +44,52 @@ def get_categories_to_search(focus: str) -> List[str]:
         "creative_tools": ["creative_tools"],
         "business_tools": ["business_tools"],
         "productivity_tools": ["productivity_tools"],
+        
+        # Enhanced "all" with new categories
         "all": [
-            "desktop_applications", "browser_extensions", "mobile_apps",
-            "web_applications", "ai_services", "code_editors", 
+            "ai_writing_tools", "ai_image_generation", "ai_video_tools", "ai_audio_tools",
+            "ai_coding_tools", "ai_data_analysis", "ai_marketing_tools", "ai_customer_service",
+            "ai_hr_tools", "ai_finance_tools", "ai_education_tools", "ai_research_tools",
+            "ai_3d_modeling", "ai_gaming_tools", "desktop_applications", "browser_extensions",
+            "mobile_apps", "web_applications", "ai_services", "code_editors", 
             "plugins", "creative_tools", "business_tools", "productivity_tools"
         ]
     }
     
-    # Return specific categories or default to all
     return focus_mapping.get(focus, focus_mapping["all"])
 
 
-def create_focused_discovery_prompt(categories: List[str], max_tools_per_category: int = 5) -> str:
-    """Create a focused prompt for specific categories"""
+def create_focused_discovery_prompt(categories: List[str], max_tools_per_category: int = 12) -> str:
+    """Create enhanced prompts with better AI targeting"""
     
+    # Enhanced category descriptions
     category_descriptions = {
-        "desktop_applications": "Desktop software and native applications installed on computers",
-        "browser_extensions": "Browser extensions and add-ons for Chrome, Firefox, Safari, Edge",
-        "mobile_apps": "Mobile applications for iOS and Android smartphones and tablets",
-        "web_applications": "Web-based tools and SaaS platforms accessible via browser",
-        "ai_services": "APIs and cloud AI services for developers and businesses",
-        "code_editors": "AI-powered IDEs, code editors, and development environments",
-        "plugins": "IDE plugins, editor extensions, and development tool integrations",
-        "creative_tools": "AI tools for art, design, music, video, and creative content creation",
-        "business_tools": "CRM, marketing automation, sales, and enterprise business tools",
-        "productivity_tools": "Task management, note-taking, and personal productivity applications"
+        "ai_writing_tools": "AI writing assistants, content creators, copywriting tools, blog writers, grammar checkers",
+        "ai_image_generation": "AI image generators, art creation tools, logo makers, photo editors, design assistants",
+        "ai_video_tools": "AI video creators, editors, animation tools, deepfake, video enhancement, subtitle generators",
+        "ai_audio_tools": "AI music generators, voice synthesis, audio editing, transcription tools, podcast enhancers",
+        "ai_coding_tools": "AI coding assistants, code completion, debugging tools, documentation generators, code reviewers",
+        "ai_data_analysis": "AI data visualization, analytics platforms, business intelligence tools, statistical analysis",
+        "ai_marketing_tools": "AI marketing automation, social media tools, SEO assistants, ad creators, email marketing",
+        "ai_customer_service": "AI chatbots, customer support tools, help desk automation, sentiment analysis",
+        "ai_hr_tools": "AI recruitment tools, resume screening, HR automation, talent management, interview assistants",
+        "ai_finance_tools": "AI trading platforms, financial analysis, accounting automation, fraud detection",
+        "ai_education_tools": "AI tutoring platforms, online learning tools, educational assistants, course creators",
+        "ai_research_tools": "AI research assistants, literature review tools, academic helpers, citation managers",
+        "ai_3d_modeling": "AI 3D generators, CAD tools, architecture design, VR/AR creators, modeling assistants",
+        "ai_gaming_tools": "AI game development tools, procedural generation, NPC AI, game testing, level design",
+        "desktop_applications": "Desktop software with AI features",
+        "browser_extensions": "Browser extensions and add-ons with AI capabilities", 
+        "mobile_apps": "Mobile applications with AI/ML features",
+        "web_applications": "Web-based AI tools and SaaS platforms",
+        "ai_services": "AI APIs and cloud services for developers",
+        "code_editors": "AI-powered IDEs and development environments",
+        "plugins": "IDE plugins and development tool extensions",
+        "creative_tools": "AI tools for creative work, design, art creation",
+        "business_tools": "AI business automation, CRM, enterprise tools",
+        "productivity_tools": "AI productivity apps, task management, note-taking"
     }
     
-    # Add this instruction block at the beginning of ALL prompts
     BASE_INSTRUCTION = """CRITICAL: You must return ONLY a valid JSON array. No explanations, no text before or after.
 
 Each tool must be REAL and CURRENTLY AVAILABLE (not hypothetical or future tools).
@@ -65,7 +101,7 @@ Include only tools you are certain exist with working websites.
         category = categories[0]
         category_desc = category_descriptions.get(category, category.replace('_', ' ').title())
         
-        prompt = f"""{BASE_INSTRUCTION}Find {max_tools_per_category} popular AI-powered tools in this category:
+        prompt = f"""{BASE_INSTRUCTION}Find {max_tools_per_category} popular AI tools in this category:
 
 **{category.replace('_', ' ').title()}**: {category_desc}
 
@@ -73,33 +109,34 @@ Requirements:
 - Must be real, existing tools (not examples or hypothetical)
 - Must have AI/ML as a core feature
 - Must have a working website
-- Should be actively maintained
+- Include both popular and lesser-known tools
+- Mix of pricing models (free, freemium, paid)
 
 Return as JSON array with this exact format:
 [
   {{
     "name": "Actual Tool Name",
     "website": "https://real-website.com",
-    "description": "What this tool actually does",
+    "description": "Detailed description of what this tool actually does",
     "tool_type": "{category}",
     "category": "Specific Subcategory",
-    "pricing": "Free|Paid|Freemium",
-    "features": "Real features, comma separated",
-    "confidence": 0.95
+    "pricing": "Free|Freemium|Paid|Enterprise",
+    "features": "Feature1, Feature2, Feature3",
+    "confidence": 0.9
   }}
 ]"""
     else:
-        # Multiple categories - limit per category to avoid token limits
+        # Multiple categories - fewer tools per category to avoid token limits
         category_list = []
-        for cat in categories:
+        for cat in categories[:5]:  # Limit to 5 categories to avoid overwhelming
             desc = category_descriptions.get(cat, cat.replace('_', ' ').title())
             category_list.append(f"- {cat}: {desc}")
         
-        prompt = f"""{BASE_INSTRUCTION}Find 2-3 popular AI tools in EACH category:
+        prompt = f"""{BASE_INSTRUCTION}Find 8-10 AI tools in EACH category:
 
 {chr(10).join(category_list)}
 
-Return ONLY a JSON array. Maximum 25 tools total."""
+Return ONLY a JSON array. Maximum 50 tools total."""
     
     return prompt
 
@@ -319,17 +356,24 @@ def save_discovered_tools_with_deduplication(db: Session, tools: List[dict]) -> 
         }
 
 def discover_tools(focus: str, db: Session) -> Dict[str, Any]:
-    """Main discover tools function with proper focus handling and deduplication"""
+    """Enhanced discover tools function with improved categories and discovery"""
     
     try:
-        # Get categories to search based on focus
+        # Get categories to search based on focus (now with enhanced categories)
         categories_to_search = get_categories_to_search(focus)
         
-        # Create focused prompt
+        # Limit categories for better performance and results
+        if focus == "all":
+            categories_to_search = categories_to_search[:6]  # Process 6 categories at a time
+        
+        print(f"Enhanced discovery starting for: {categories_to_search}")
+        
+        # Create enhanced prompt
         prompt = create_focused_discovery_prompt(categories_to_search)
         
-        # Call AI service with reasonable token limit
-        ai_response = agent_service.send(prompt, block=True, timeout=120)        
+        # Call AI service with reasonable timeout
+        ai_response = agent_service.send(prompt, block=True, timeout=150)        
+        
         # Parse tools from response
         discovered_tools = parse_tools_from_response(ai_response)
         
@@ -344,11 +388,15 @@ def discover_tools(focus: str, db: Session) -> Dict[str, Any]:
                 "raw_response": ai_response[:500] + "..." if len(ai_response) > 500 else ai_response
             }
         
+        print(f"Found {len(discovered_tools)} tools")
+        
         # Enhance pricing information
         discovered_tools = enhance_pricing_info(discovered_tools)
         
         # Save with deduplication
         save_result = save_discovered_tools_with_deduplication(db, discovered_tools)
+        
+        print(f"Save result: {save_result}")
         
         return {
             "success": save_result["success"],
@@ -360,9 +408,11 @@ def discover_tools(focus: str, db: Session) -> Dict[str, Any]:
         }
         
     except Exception as e:
+        error_msg = f"Enhanced discovery failed: {str(e)}"
+        print(error_msg)
         return {
             "success": False,
-            "error": f"Discovery failed: {str(e)}",
+            "error": error_msg,
             "tools": [],
             "count": 0,
             "focus": focus,

@@ -1,4 +1,5 @@
 import os
+import sys
 import asyncio
 import threading
 
@@ -53,10 +54,18 @@ class AgentService:
         self.agent = None
         self.running = True
 
-        self.fast_agent = FastAgent(
-            "Acuvity Agent",
-            config_path=self.config,
-        )
+        # FIX: Save and clear sys.argv to prevent argument parsing conflicts
+        original_argv = sys.argv.copy()
+        sys.argv = ['fastagent']  # Provide minimal args
+        
+        try:
+            self.fast_agent = FastAgent(
+                "Acuvity Agent",
+                config_path=self.config,
+            )
+        finally:
+            # Restore original sys.argv
+            sys.argv = original_argv
 
         server_keys = {}
         try:
