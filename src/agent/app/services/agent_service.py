@@ -2,6 +2,7 @@ import os
 import sys
 import asyncio
 import threading
+import time
 
 from opentelemetry import trace
 
@@ -49,7 +50,8 @@ class AgentService:
         self.loop.run_forever()
 
     async def runner(self):
-
+        """FIXED: Proper initialization with error handling and retry logic"""
+        
         # Run this service once and process multiple requests
         self.agent = None
         self.running = True
@@ -58,24 +60,54 @@ class AgentService:
         original_argv = sys.argv.copy()
         sys.argv = ['fastagent']  # Provide minimal args
         
-        try:
-            self.fast_agent = FastAgent(
-                "Acuvity Agent",
-                config_path=self.config,
-            )
-        finally:
-            # Restore original sys.argv
-            sys.argv = original_argv
+        max_retries = 3
+        retry_count = 0
+        
+        while retry_count < max_retries and self.running:
+            try:
+                self.logger.info(f"Initializing FastAgent (attempt {retry_count + 1}/{max_retries})...")
+                
+                self.fast_agent = FastAgent(
+                    "Acuvity Agent",
+                    config_path=self.config,
+                )
+                
+                self.logger.info("FastAgent created successfully")
+                break
+                
+            except Exception as e:
+                retry_count += 1
+                self.logger.error(f"FastAgent initialization failed (attempt {retry_count}): {e}")
+                
+                if retry_count >= max_retries:
+                    self.logger.error("Max retries reached. Agent initialization failed.")
+                    return
+                
+                # Wait before retrying
+                await asyncio.sleep(5)
+            finally:
+                # Restore original sys.argv
+                sys.argv = original_argv
 
+        if not hasattr(self, 'fast_agent'):
+            self.logger.error("Failed to initialize FastAgent after all retries")
+            return
+
+        # Get server keys with error handling
         server_keys = {}
         try:
-            server_keys = self.fast_agent.config.get("mcp").get("servers").keys()
+            mcp_config = self.fast_agent.config.get("mcp", {})
+            servers_config = mcp_config.get("servers", {})
+            server_keys = servers_config.keys()
+            self.logger.info(f"Found {len(server_keys)} MCP servers: {list(server_keys)}")
         except Exception as e:
             self.logger.error(f"Error getting server keys: {e}")
+            server_keys = {}
 
-        @self.fast_agent.agent(
-            name="acuvity",
-            instruction="""You are an AI assistant with access to specialized tools AND comprehensive tool discovery capabilities.
+        try:
+            @self.fast_agent.agent(
+                name="acuvity",
+                instruction="""You are an AI assistant with access to specialized tools AND comprehensive tool discovery capabilities.
 
 IMPORTANT RULES:
 1. Always think step-by-step before using tools
@@ -145,23 +177,32 @@ SMART COMBINATIONS:
 - Prioritize by relevance and quality (Hacker News = highest quality)
 
 IMPORTANT: You have access to both historical tools (21K+ database) AND real-time discovery. Use both to provide the most comprehensive and current recommendations!""",
-            servers=server_keys,
-            request_params=RequestParams(
-                use_history=True, 
-                max_iterations=10000
-            ),
-        )
-        async def dummy(self):
-            # This function is needed for the decorator but not used directly
-            pass
+                servers=server_keys,
+                request_params=RequestParams(
+                    use_history=True, 
+                    max_iterations=10000
+                ),
+            )
+            async def dummy():
+                # This function is needed for the decorator but not used directly
+                pass
 
-        async with self.fast_agent.run() as agent:
-            self.agent = agent
-            while self.running:
-                await asyncio.sleep(3600)  # Keep alive
+            self.logger.info("Agent decorator configured successfully")
+
+            # Start the agent with proper error handling
+            async with self.fast_agent.run() as agent:
+                self.logger.info("FastAgent started successfully")
+                self.agent = agent
+                
+                # Keep the agent alive
+                while self.running:
+                    await asyncio.sleep(60)  # Check every minute
+
+        except Exception as e:
+            self.logger.error(f"Error in agent setup: {e}")
+            return
 
         self.logger.warning("Agentic Runner stopped")
-
 
     async def process_message(self, message: str) -> str:
         """Asynchronous send method to process messages."""
@@ -183,9 +224,14 @@ IMPORTANT: You have access to both historical tools (21K+ database) AND real-tim
                     ),
                 ]
             )
-            response = await self.agent.acuvity.generate(
-                multipart_messages=prompts,
-                request_params=RequestParams(use_history=self.history, max_iterations=10000),
+            
+            # Increased timeout for tool discovery operations
+            response = await asyncio.wait_for(
+                self.agent.acuvity.generate(
+                    multipart_messages=prompts,
+                    request_params=RequestParams(use_history=self.history, max_iterations=10000),
+                ),
+                timeout=300  # 5 minute timeout for complex tool discovery
             )
 
             # Use history until explicitly cleared
@@ -196,20 +242,34 @@ IMPORTANT: You have access to both historical tools (21K+ database) AND real-tim
             for content in response.content:
                 response_text = get_text(content)
             return response_text
+            
+        except asyncio.TimeoutError:
+            return "error: Request timed out. Please try a simpler query or try again later."
         except Exception as e:
             # Handle errors - could put them on the output queue too
             response = f"error: {e}, original_message: {message}"
+            self.logger.error(f"Error processing message: {e}")
         return response
 
     def send(self, message, block=True, timeout=None) -> str:
         """Send a message in the background loop"""
-        fut = asyncio.run_coroutine_threadsafe(self.process_message(message), self.loop)
-        return fut.result(timeout=timeout) if block else None
+        if not self.thread.is_alive():
+            return "error: agent service thread is not running"
+            
+        try:
+            fut = asyncio.run_coroutine_threadsafe(self.process_message(message), self.loop)
+            return fut.result(timeout=timeout) if block else None
+        except Exception as e:
+            return f"error: failed to send message: {e}"
 
     def clear(self) -> str:
         """Clear the agentic history in the same loop"""
         self.logger.info("history clearing...")
         self.history = False
         return "clear"
+
+    def is_ready(self) -> bool:
+        """Check if agent is ready to process messages"""
+        return self.agent is not None and self.thread.is_alive()
 
 agent_service = AgentService()

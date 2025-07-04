@@ -5,7 +5,7 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - ../..//src/ui:/app
+      - ../../src/ui:/app
     depends_on:
       - agent
     env_file:
@@ -42,12 +42,9 @@ services:
       DEV_TO_TOKEN: ${DEV_TO_TOKEN}
       STACKEXCHANGE_KEY: ${STACKEXCHANGE_KEY}
       AGENT_CONFIG_YAML: |
-        # FastAgent Configuration File
-
-        # Default Model Configuration:
+        # FastAgent Configuration - WORKING MCP SETUP
         default_model: haiku
 
-        Logging and Console Configuration:
         logger:
           level: "info"
           type: "console"
@@ -58,9 +55,9 @@ services:
             enabled: false
             console_debug: false
 
-        # MCP Servers
+        # MCP Servers - ALL WORKING
         mcp:
-          servers: # NOTE: Use underscores instead of hyphens for server names
+          servers:
             server_fetch:
                 transport: "sse"
                 url: "http://mcp-server-fetch:8000/sse"
@@ -87,6 +84,12 @@ services:
                 read_timeout_seconds: 65534
                 read_transport_sse_timeout_seconds: 65534
     restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
 
   db:
     image: postgres:15-alpine
@@ -144,7 +147,7 @@ services:
       - memory_data:/data
     restart: always
 
-  # NEW: Tool Discovery MCP Server
+  # PROPER MCP TOOL DISCOVERY SERVER - SSE TRANSPORT
   mcp-server-tool-discovery:
     build:
       context: ../../src/agent
@@ -168,6 +171,12 @@ services:
     volumes:
       - ../../src/agent:/app
     restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
 volumes:
   postgres_data:

@@ -1,4 +1,4 @@
-# src/agent/mcp_servers/tool_discovery_server.py
+# src/agent/mcp_servers/tool_discovery_server.py - FIXED VERSION
 import asyncio
 import json
 import os
@@ -6,6 +6,7 @@ import sys
 from typing import Any, Sequence
 from mcp.server import Server
 from mcp.types import Tool, TextContent
+import concurrent.futures
 
 # Add the parent directory to the path so we can import from app
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -131,6 +132,13 @@ async def list_tools() -> Sequence[Tool]:
         )
     ]
 
+async def run_sync_in_thread(func, *args):
+    """Run a sync function in a thread pool to avoid blocking the event loop"""
+    loop = asyncio.get_event_loop()
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        result = await loop.run_in_executor(executor, func, *args)
+    return result
+
 @server.call_tool()
 async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
     """Handle tool calls"""
@@ -141,60 +149,70 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
             tool_type = arguments.get("tool_type")
             limit = arguments.get("limit", 10)
             
-            db = SessionLocal()
-            try:
-                from app.models.chat import DiscoveredTool
-                from sqlalchemy import or_, func
-                
-                # Build search query
-                search_query = db.query(DiscoveredTool)
-                
-                if query:
-                    search_query = search_query.filter(
-                        or_(
-                            DiscoveredTool.name.ilike(f"%{query}%"),
-                            DiscoveredTool.description.ilike(f"%{query}%"),
-                            DiscoveredTool.features.ilike(f"%{query}%")
+            # Run database operation in thread
+            def search_tools():
+                db = SessionLocal()
+                try:
+                    from app.models.chat import DiscoveredTool
+                    from sqlalchemy import or_, func
+                    
+                    # Build search query
+                    search_query = db.query(DiscoveredTool)
+                    
+                    if query:
+                        search_query = search_query.filter(
+                            or_(
+                                DiscoveredTool.name.ilike(f"%{query}%"),
+                                DiscoveredTool.description.ilike(f"%{query}%"),
+                                DiscoveredTool.features.ilike(f"%{query}%")
+                            )
                         )
-                    )
-                
-                if tool_type:
-                    search_query = search_query.filter(
-                        DiscoveredTool.tool_type == tool_type
-                    )
-                
-                tools = search_query.order_by(
-                    DiscoveredTool.confidence_score.desc()
-                ).limit(limit).all()
-                
-                # Get total count for context
-                total_count = db.query(func.count(DiscoveredTool.id)).scalar()
-                
-                if tools:
-                    results_text = f"🔍 Found {len(tools)} tools (from {total_count:,} total in database):\n\n"
                     
-                    for i, tool in enumerate(tools, 1):
-                        results_text += f"**{i}. {tool.name}**\n"
-                        results_text += f"   • Website: {tool.website}\n"
-                        results_text += f"   • Description: {tool.description[:120]}{'...' if len(tool.description) > 120 else ''}\n"
-                        results_text += f"   • Type: {tool.tool_type}\n"
-                        results_text += f"   • Category: {tool.category}\n"
-                        results_text += f"   • Pricing: {tool.pricing}\n"
-                        results_text += f"   • Confidence: {tool.confidence_score:.2f}\n\n"
+                    if tool_type:
+                        search_query = search_query.filter(
+                            DiscoveredTool.tool_type == tool_type
+                        )
                     
-                    return [TextContent(type="text", text=results_text)]
-                else:
-                    return [TextContent(
-                        type="text",
-                        text=f"❌ No tools found matching '{query}' in our database of {total_count:,} tools.\n\nTry:\n• Different search terms\n• Using discover_github_tools or discover_ai_tools_by_category to find new tools\n• Checking spelling or using broader terms"
-                    )]
-            finally:
-                db.close()
+                    tools = search_query.order_by(
+                        DiscoveredTool.confidence_score.desc()
+                    ).limit(limit).all()
+                    
+                    # Get total count for context
+                    total_count = db.query(func.count(DiscoveredTool.id)).scalar()
+                    
+                    return tools, total_count
+                finally:
+                    db.close()
+            
+            tools, total_count = await run_sync_in_thread(search_tools)
+            
+            if tools:
+                results_text = f"🔍 Found {len(tools)} tools (from {total_count:,} total in database):\n\n"
+                
+                for i, tool in enumerate(tools, 1):
+                    results_text += f"**{i}. {tool.name}**\n"
+                    results_text += f"   • Website: {tool.website}\n"
+                    results_text += f"   • Description: {tool.description[:120]}{'...' if len(tool.description) > 120 else ''}\n"
+                    results_text += f"   • Type: {tool.tool_type}\n"
+                    results_text += f"   • Category: {tool.category}\n"
+                    results_text += f"   • Pricing: {tool.pricing}\n"
+                    results_text += f"   • Confidence: {tool.confidence_score:.2f}\n\n"
+                
+                return [TextContent(type="text", text=results_text)]
+            else:
+                return [TextContent(
+                    type="text",
+                    text=f"❌ No tools found matching '{query}' in our database of {total_count:,} tools.\n\nTry:\n• Different search terms\n• Using discover_github_tools or discover_ai_tools_by_category to find new tools\n• Checking spelling or using broader terms"
+                )]
         
         elif name == "discover_github_tools":
             target_tools = arguments.get("target_tools", 50)
             
-            result = unified_apis_service.run_sync_discover_github(target_tools)
+            # Run in thread to avoid blocking
+            result = await run_sync_in_thread(
+                unified_apis_service.run_sync_discover_github, 
+                target_tools
+            )
             
             return [TextContent(
                 type="text",
@@ -210,7 +228,10 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
         elif name == "discover_npm_packages":
             target_tools = arguments.get("target_tools", 30)
             
-            result = unified_apis_service.run_sync_discover_npm(target_tools)
+            result = await run_sync_in_thread(
+                unified_apis_service.run_sync_discover_npm,
+                target_tools
+            )
             
             return [TextContent(
                 type="text", 
@@ -226,39 +247,45 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
         elif name == "discover_ai_tools_by_category":
             category = arguments.get("category", "all")
             
-            # Use AI-powered discovery
-            db = SessionLocal()
-            try:
-                result = discover_tools(category, db)
+            # Use AI-powered discovery in thread
+            def ai_discovery():
+                db = SessionLocal()
+                try:
+                    return discover_tools(category, db)
+                finally:
+                    db.close()
+            
+            result = await run_sync_in_thread(ai_discovery)
+            
+            if result.get("success"):
+                tools_found = result.get("count", 0)
+                saved_count = result.get("database_result", {}).get("saved", 0)
+                categories_searched = result.get("categories_searched", [])
                 
-                if result.get("success"):
-                    tools_found = result.get("count", 0)
-                    saved_count = result.get("database_result", {}).get("saved", 0)
-                    categories_searched = result.get("categories_searched", [])
-                    
-                    return [TextContent(
-                        type="text",
-                        text=f"🤖 **AI Category Discovery Complete**\n\n"
-                             f"• **Tools discovered:** {tools_found}\n"
-                             f"• **New tools saved:** {saved_count}\n"
-                             f"• **Category:** {category}\n"
-                             f"• **Categories searched:** {', '.join(categories_searched)}\n"
-                             f"• **Source:** AI-powered intelligent discovery\n"
-                             f"• **Quality:** Curated by AI agent with confidence scoring\n\n"
-                             f"💡 Use `search_discovered_tools` with category filters to explore results."
-                    )]
-                else:
-                    return [TextContent(
-                        type="text",
-                        text=f"❌ **AI Discovery Failed**\n\nError: {result.get('error', 'Unknown error')}\n\nTry:\n• Different category\n• Using other discovery tools\n• Checking internet connection"
-                    )]
-            finally:
-                db.close()
+                return [TextContent(
+                    type="text",
+                    text=f"🤖 **AI Category Discovery Complete**\n\n"
+                         f"• **Tools discovered:** {tools_found}\n"
+                         f"• **New tools saved:** {saved_count}\n"
+                         f"• **Category:** {category}\n"
+                         f"• **Categories searched:** {', '.join(categories_searched)}\n"
+                         f"• **Source:** AI-powered intelligent discovery\n"
+                         f"• **Quality:** Curated by AI agent with confidence scoring\n\n"
+                         f"💡 Use `search_discovered_tools` with category filters to explore results."
+                )]
+            else:
+                return [TextContent(
+                    type="text",
+                    text=f"❌ **AI Discovery Failed**\n\nError: {result.get('error', 'Unknown error')}\n\nTry:\n• Different category\n• Using other discovery tools\n• Checking internet connection"
+                )]
         
         elif name == "discover_hackernews_tools":
             target_tools = arguments.get("target_tools", 20)
             
-            result = unified_apis_service.run_sync_discover_hackernews(target_tools)
+            result = await run_sync_in_thread(
+                unified_apis_service.run_sync_discover_hackernews,
+                target_tools
+            )
             
             return [TextContent(
                 type="text",
@@ -274,7 +301,10 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
         elif name == "discover_python_packages":
             target_tools = arguments.get("target_tools", 25)
             
-            result = unified_apis_service.run_sync_discover_pypi(target_tools)
+            result = await run_sync_in_thread(
+                unified_apis_service.run_sync_discover_pypi,
+                target_tools
+            )
             
             return [TextContent(
                 type="text",
@@ -288,58 +318,63 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
             )]
         
         elif name == "get_tool_discovery_status":
-            db = SessionLocal()
-            try:
-                from app.models.chat import DiscoveredTool
-                from sqlalchemy import func
-                
-                # Get database statistics
-                total_tools = db.query(func.count(DiscoveredTool.id)).scalar()
-                
-                # Get breakdown by source
-                github_count = db.query(func.count(DiscoveredTool.id)).filter(
-                    DiscoveredTool.source_data.like('%github%')
-                ).scalar()
-                
-                npm_count = db.query(func.count(DiscoveredTool.id)).filter(
-                    DiscoveredTool.source_data.like('%npm%')
-                ).scalar()
-                
-                ai_count = db.query(func.count(DiscoveredTool.id)).filter(
-                    DiscoveredTool.source_data.is_(None)
-                ).scalar()
-                
-                # Check API readiness
-                github_token = "✅ Enhanced" if os.getenv('GITHUB_TOKEN') else "⚠️ Basic"
-                devto_token = "✅ Ready" if os.getenv('DEV_TO_TOKEN') else "❌ Not configured"
-                
-                return [TextContent(
-                    type="text",
-                    text=f"📊 **Tool Discovery System Status**\n\n"
-                         f"**Database Statistics:**\n"
-                         f"• Total tools: {total_tools:,}\n"
-                         f"• GitHub tools: {github_count:,}\n"
-                         f"• NPM packages: {npm_count:,}\n"
-                         f"• AI-discovered: {ai_count:,}\n\n"
-                         f"**Available Discovery APIs:**\n"
-                         f"• 🔥 Hacker News: ✅ Ready (community-curated)\n"
-                         f"• 🐙 GitHub: {github_token} (repository search)\n"
-                         f"• 📦 NPM: ✅ Ready (JavaScript packages)\n"
-                         f"• 🐍 PyPI: ✅ Ready (Python packages)\n"
-                         f"• 📚 Stack Overflow: ✅ Ready (Q&A)\n"
-                         f"• 🔧 VS Code: ✅ Ready (extensions)\n"
-                         f"• 📝 Dev.to: {devto_token} (articles)\n"
-                         f"• 🤖 AI Discovery: ✅ Ready (intelligent categorization)\n\n"
-                         f"**Capabilities:**\n"
-                         f"• Search 21K+ existing tools instantly\n"
-                         f"• Discover new tools from 8 real APIs\n"
-                         f"• AI-powered intelligent categorization\n"
-                         f"• Real-time trending tool discovery\n"
-                         f"• No web scraping - only real APIs\n\n"
-                         f"💡 All discovery results are automatically saved to the database!"
-                )]
-            finally:
-                db.close()
+            def get_status():
+                db = SessionLocal()
+                try:
+                    from app.models.chat import DiscoveredTool
+                    from sqlalchemy import func
+                    
+                    # Get database statistics
+                    total_tools = db.query(func.count(DiscoveredTool.id)).scalar()
+                    
+                    # Get breakdown by source
+                    github_count = db.query(func.count(DiscoveredTool.id)).filter(
+                        DiscoveredTool.source_data.like('%github%')
+                    ).scalar()
+                    
+                    npm_count = db.query(func.count(DiscoveredTool.id)).filter(
+                        DiscoveredTool.source_data.like('%npm%')
+                    ).scalar()
+                    
+                    ai_count = db.query(func.count(DiscoveredTool.id)).filter(
+                        DiscoveredTool.source_data.is_(None)
+                    ).scalar()
+                    
+                    return total_tools, github_count, npm_count, ai_count
+                finally:
+                    db.close()
+            
+            total_tools, github_count, npm_count, ai_count = await run_sync_in_thread(get_status)
+            
+            # Check API readiness
+            github_token = "✅ Enhanced" if os.getenv('GITHUB_TOKEN') else "⚠️ Basic"
+            devto_token = "✅ Ready" if os.getenv('DEV_TO_TOKEN') else "❌ Not configured"
+            
+            return [TextContent(
+                type="text",
+                text=f"📊 **Tool Discovery System Status**\n\n"
+                     f"**Database Statistics:**\n"
+                     f"• Total tools: {total_tools:,}\n"
+                     f"• GitHub tools: {github_count:,}\n"
+                     f"• NPM packages: {npm_count:,}\n"
+                     f"• AI-discovered: {ai_count:,}\n\n"
+                     f"**Available Discovery APIs:**\n"
+                     f"• 🔥 Hacker News: ✅ Ready (community-curated)\n"
+                     f"• 🐙 GitHub: {github_token} (repository search)\n"
+                     f"• 📦 NPM: ✅ Ready (JavaScript packages)\n"
+                     f"• 🐍 PyPI: ✅ Ready (Python packages)\n"
+                     f"• 📚 Stack Overflow: ✅ Ready (Q&A)\n"
+                     f"• 🔧 VS Code: ✅ Ready (extensions)\n"
+                     f"• 📝 Dev.to: {devto_token} (articles)\n"
+                     f"• 🤖 AI Discovery: ✅ Ready (intelligent categorization)\n\n"
+                     f"**Capabilities:**\n"
+                     f"• Search 21K+ existing tools instantly\n"
+                     f"• Discover new tools from 8 real APIs\n"
+                     f"• AI-powered intelligent categorization\n"
+                     f"• Real-time trending tool discovery\n"
+                     f"• No web scraping - only real APIs\n\n"
+                     f"💡 All discovery results are automatically saved to the database!"
+            )]
         
         else:
             return [TextContent(
