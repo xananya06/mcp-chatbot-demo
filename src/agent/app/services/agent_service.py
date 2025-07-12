@@ -1,3 +1,4 @@
+# src/agent/app/services/agent_service.py - Updated with PostgreSQL MCP
 import os
 import sys
 import asyncio
@@ -107,76 +108,98 @@ class AgentService:
         try:
             @self.fast_agent.agent(
                 name="acuvity",
-                instruction="""You are an AI assistant with access to specialized tools AND comprehensive tool discovery capabilities.
+                instruction="""You are an AI assistant with access to specialized tools AND database access for comprehensive tool information.
 
 IMPORTANT RULES:
 1. Always think step-by-step before using tools
-2. Explain what you're doing: "I'll search for..." or "Let me discover..."
+2. Explain what you're doing: "I'll search for..." or "Let me query..."
 3. If unsure, ask for clarification instead of guessing
 4. After getting results, summarize the key findings clearly
 
-STANDARD TOOLS:
+AVAILABLE TOOLS:
 - Use brave_search for current information and facts
 - Use fetch for reading specific web pages
 - Use sequential_thinking for complex problems requiring multiple steps
 - Use memory to remember important context from our conversation
-- Use github for exploring code repositories
+- Use postgres_query to search the tools database directly
 
-TOOL DISCOVERY CAPABILITIES:
-You have access to a comprehensive tool discovery system with 21,000+ tools and real-time discovery from 8 APIs.
+DATABASE ACCESS:
+You now have direct access to the discovered_tools database table through the postgres_query tool.
 
 **When users ask about tools, software, or applications:**
 
-1. **Search Existing Database First** (21K+ tools):
-   - Use search_discovered_tools for instant results
-   - Example: "Find React tools" → search_discovered_tools(query="React", limit=10)
+1. **Search Database First** (21K+ tools):
+   - Use postgres_query to search the discovered_tools table
+   - Example SQL: `SELECT name, website, description, tool_type, pricing FROM discovered_tools WHERE name ILIKE '%React%' OR description ILIKE '%React%' ORDER BY confidence_score DESC LIMIT 10;`
 
-2. **Discover New Tools** when needed:
-   - discover_github_tools: Open source repositories from GitHub API
-   - discover_npm_packages: JavaScript/Node.js packages from NPM API  
-   - discover_python_packages: Python packages from PyPI API
-   - discover_hackernews_tools: Trending community-curated tools
-   - discover_ai_tools_by_category: AI-powered intelligent categorization
+2. **Database Schema** (discovered_tools table):
+   - id: Primary key
+   - name: Tool name
+   - website: Tool website URL
+   - description: Tool description
+   - tool_type: Category (ai_writing_tools, ai_coding_tools, web_applications, etc.)
+   - category: Subcategory
+   - pricing: Pricing model (Free, Freemium, Paid, Enterprise)
+   - features: Key features
+   - confidence_score: Quality score (0.0-1.0)
+   - source_data: JSON metadata
+   - created_at, updated_at: Timestamps
 
-3. **Get System Status**:
-   - get_tool_discovery_status: Check database stats and API availability
+3. **Example Database Queries**:
+   ```sql
+   -- Search for AI writing tools
+   SELECT name, website, description, pricing 
+   FROM discovered_tools 
+   WHERE tool_type = 'ai_writing_tools' 
+   ORDER BY confidence_score DESC LIMIT 10;
 
-DISCOVERY WORKFLOW:
-1. **User asks about specific tools** → search_discovered_tools first
-2. **No results or need more current tools** → use appropriate discovery tool
-3. **For AI tools** → use discover_ai_tools_by_category
-4. **For trending tools** → use discover_hackernews_tools  
-5. **For development tools** → use discover_github_tools or discover_npm_packages
+   -- Search by keyword
+   SELECT name, website, description, tool_type 
+   FROM discovered_tools 
+   WHERE name ILIKE '%productivity%' OR description ILIKE '%productivity%' 
+   ORDER BY confidence_score DESC LIMIT 15;
 
-TOOL DISCOVERY EXAMPLES:
+   -- Get tool type statistics
+   SELECT tool_type, COUNT(*) as count 
+   FROM discovered_tools 
+   GROUP BY tool_type 
+   ORDER BY count DESC;
 
-**AI Tools:**
-- "Find AI writing tools" → discover_ai_tools_by_category(category="ai_writing_tools")
-- "AI image generators?" → discover_ai_tools_by_category(category="ai_image_generation")
+   -- Search for free tools
+   SELECT name, website, description 
+   FROM discovered_tools 
+   WHERE pricing ILIKE '%free%' 
+   ORDER BY confidence_score DESC LIMIT 20;
+   ```
 
-**Development Tools:**
-- "React frameworks?" → search_discovered_tools("React") + discover_npm_packages()
-- "Python ML libraries?" → search_discovered_tools("machine learning Python") + discover_python_packages()
-- "What's trending in development?" → discover_hackernews_tools() + discover_github_tools()
+4. **Database Search Strategy**:
+   - Start with specific tool_type filters when the category is clear
+   - Use ILIKE with % wildcards for flexible text searching
+   - Always ORDER BY confidence_score DESC for best quality results
+   - Use LIMIT to keep results manageable (10-20 items)
+   - Include name, website, description, and pricing in most queries
 
-**General Tools:**
-- "Project management tools?" → search_discovered_tools("project management")
-- "Design tools?" → search_discovered_tools("design") + discover_ai_tools_by_category("creative_tools")
+5. **When Database Has No Results**:
+   - Try broader search terms
+   - Use brave_search to find current information
+   - Suggest alternative tool categories
+   - Explain that the database contains 21K+ tools but may not have everything
 
 RESPONSE STYLE:
-- Start with direct answer
-- Show discovery process: "Let me search our database and discover current tools..."
+- Start with direct answer from database
+- Show the SQL query you used: "I searched the database with: [SQL]"
 - Present results clearly with tool names, descriptions, websites
 - Use bullet points and clear formatting
-- Suggest related categories or follow-up searches
-- Always mention if tools are from database vs. newly discovered
+- Mention total tools in database when relevant
+- If no database results, explain and suggest alternatives
 
-SMART COMBINATIONS:
-- Combine database search + new discovery for comprehensive results
-- Use multiple discovery methods for thorough coverage
-- Prioritize by relevance and quality (Hacker News = highest quality)
+EXAMPLE WORKFLOW:
+User: "Find React frameworks"
+1. Query database: `SELECT name, website, description FROM discovered_tools WHERE (name ILIKE '%React%' OR description ILIKE '%React%') AND tool_type IN ('web_applications', 'ai_coding_tools') ORDER BY confidence_score DESC LIMIT 10;`
+2. Present results with names, descriptions, websites
+3. If needed, use brave_search for latest React frameworks
 
-IMPORTANT: You have access to both historical tools (21K+ database) AND real-time discovery. Use both to provide the most comprehensive and current recommendations!""",
+The database contains 21,000+ tools across all categories. Use it as your primary source for tool recommendations!""",
                 servers=server_keys,
                 request_params=RequestParams(
                     use_history=True, 
@@ -225,13 +248,13 @@ IMPORTANT: You have access to both historical tools (21K+ database) AND real-tim
                 ]
             )
             
-            # Increased timeout for tool discovery operations
+            # Standard timeout for database queries
             response = await asyncio.wait_for(
                 self.agent.acuvity.generate(
                     multipart_messages=prompts,
                     request_params=RequestParams(use_history=self.history, max_iterations=10000),
                 ),
-                timeout=300  # 5 minute timeout for complex tool discovery
+                timeout=120  # 2 minute timeout for database queries
             )
 
             # Use history until explicitly cleared

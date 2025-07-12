@@ -30,7 +30,7 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      mcp-server-tool-discovery:
+      mcp-server-postgres:
         condition: service_started
     env_file:
       - .env
@@ -42,7 +42,7 @@ services:
       DEV_TO_TOKEN: ${DEV_TO_TOKEN}
       STACKEXCHANGE_KEY: ${STACKEXCHANGE_KEY}
       AGENT_CONFIG_YAML: |
-        # FastAgent Configuration - WORKING MCP SETUP
+        # FastAgent Configuration - PostgreSQL MCP Integration
         default_model: haiku
 
         logger:
@@ -55,7 +55,7 @@ services:
             enabled: false
             console_debug: false
 
-        # MCP Servers - ALL WORKING
+        # MCP Servers - Added PostgreSQL server for database access
         mcp:
           servers:
             server_fetch:
@@ -78,9 +78,9 @@ services:
                 url: "http://mcp-server-memory:8000/sse"
                 read_timeout_seconds: 65534
                 read_transport_sse_timeout_seconds: 65534
-            server_tool_discovery:
+            server_postgres:
                 transport: "sse"
-                url: "http://mcp-server-tool-discovery:8000/sse"
+                url: "http://mcp-server-postgres:8000/sse"
                 read_timeout_seconds: 65534
                 read_transport_sse_timeout_seconds: 65534
     restart: always
@@ -147,11 +147,9 @@ services:
       - memory_data:/data
     restart: always
 
-  # PROPER MCP TOOL DISCOVERY SERVER - SSE TRANSPORT
-  mcp-server-tool-discovery:
-    build:
-      context: ../../src/agent
-      dockerfile: Dockerfile.tool-discovery
+  # PostgreSQL MCP Server for direct database access
+  mcp-server-postgres:
+    image: acuvity/mcp-server-postgres:latest
     ports:
       - "8905:8000"
     depends_on:
@@ -160,16 +158,8 @@ services:
     env_file:
       - .env
     environment:
-      - POSTGRES_SERVER=db
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_DB=${POSTGRES_DB}
-      - GITHUB_TOKEN=${GITHUB_TOKEN}
-      - DEV_TO_TOKEN=${DEV_TO_TOKEN}
-      - STACKEXCHANGE_KEY=${STACKEXCHANGE_KEY}
+      - DATABASE_URI=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       - MINIBRIDGE_LOG_LEVEL=${MCP_SERVER_LOG_LEVEL}
-    volumes:
-      - ../../src/agent:/app
     restart: always
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
