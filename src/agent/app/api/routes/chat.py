@@ -1,4 +1,4 @@
-# Enhanced API routes implementing PDF requirements
+# Fixed API routes - simplified to work with unified activity service
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_, or_, desc
@@ -10,11 +10,9 @@ from app.schemas.chat import ChatRequest, ChatResponse
 from app.services.chat_service import chat_service
 from app.api.auth import auth
 from app.models.chat import DiscoveredTool, ToolReport, SourceTracking
-from app.services.enhanced_discovery_service import enhanced_discovery_service
-from app.services.health_check_service import health_check_service
-from app.services.quality_dashboard_service import quality_dashboard_service
+from app.services.unified_activity_service import unified_activity_service
 
-# Create a router for the enhanced chat API
+# Create a router for the chat API
 router = APIRouter()
 
 # ================================================================
@@ -71,701 +69,228 @@ def get_conversation_messages(
     return messages
 
 # ================================================================
-# NEW QUALITY-FILTERED ENDPOINTS (From PDF)
+# NEW UNIFIED ACTIVITY ENDPOINTS
 # ================================================================
 
-@router.get("/ai-tools/high-confidence")
-def get_high_confidence_tools(
-    confidence_threshold: float = Query(0.8, ge=0.0, le=1.0, description="Minimum confidence score"),
+@router.get("/ai-tools/high-activity")
+def get_high_activity_tools(
+    activity_threshold: float = Query(0.7, ge=0.0, le=1.0, description="Minimum activity score"),
     limit: int = Query(50, ge=1, le=500, description="Maximum number of tools to return"),
-    tool_type: Optional[str] = Query(None, description="Filter by tool type"),
+    tool_type: Optional[str] = Query(None, description="Filter by detected tool type"),
     db: Session = Depends(get_db),
     current_user_id: int = Depends(auth.get_verified_user_id),
 ):
-    """Get only tools with high confidence scores (>0.8 by default)"""
+    """Get only tools with high activity scores (>0.7 by default)"""
     
     query = db.query(DiscoveredTool).filter(
-        DiscoveredTool.confidence_score >= confidence_threshold
+        DiscoveredTool.activity_score >= activity_threshold
     )
     
     if tool_type:
-        query = query.filter(DiscoveredTool.tool_type == tool_type)
+        query = query.filter(DiscoveredTool.tool_type_detected == tool_type)
     
-    tools = query.order_by(desc(DiscoveredTool.confidence_score)).limit(limit).all()
-    
-    return {
-        "tools": tools,
-        "count": len(tools),
-        "confidence_threshold": confidence_threshold,
-        "filter_applied": f"confidence >= {confidence_threshold}",
-        "note": "Only high-confidence tools as per PDF requirements"
-    }
-
-@router.get("/ai-tools/health-checked")
-def get_health_checked_tools(
-    hours_back: int = Query(48, ge=1, le=168, description="Tools checked within hours"),
-    status_code: Optional[int] = Query(200, description="HTTP status code filter"),
-    limit: int = Query(50, ge=1, le=500),
-    db: Session = Depends(get_db),
-    current_user_id: int = Depends(auth.get_verified_user_id),
-):
-    """Get only tools with recent successful health checks"""
-    
-    cutoff_time = datetime.utcnow() - timedelta(hours=hours_back)
-    
-    query = db.query(DiscoveredTool).filter(
-        and_(
-            DiscoveredTool.last_health_check >= cutoff_time,
-            DiscoveredTool.website_status == status_code
-        )
-    )
-    
-    tools = query.order_by(desc(DiscoveredTool.last_health_check)).limit(limit).all()
+    tools = query.order_by(desc(DiscoveredTool.activity_score)).limit(limit).all()
     
     return {
-        "tools": tools,
-        "count": len(tools),
-        "health_check_window": f"Last {hours_back} hours",
-        "status_filter": status_code,
-        "note": "Only recently health-checked tools as per PDF requirements"
-    }
-
-# ================================================================
-# COVERAGE AND QUALITY REPORTING (From PDF)
-# ================================================================
-
-@router.get("/ai-tools/coverage")
-def get_coverage_report(
-    db: Session = Depends(get_db),
-    current_user_id: int = Depends(auth.get_verified_user_id),
-):
-    """Show what categories and sources we cover"""
-    
-    # Count by tool type
-    type_coverage = db.query(
-        DiscoveredTool.tool_type,
-        func.count(DiscoveredTool.id).label('count')
-    ).group_by(DiscoveredTool.tool_type).all()
-    
-    # Count by category
-    category_coverage = db.query(
-        DiscoveredTool.category,
-        func.count(DiscoveredTool.id).label('count')
-    ).filter(DiscoveredTool.category.isnot(None)).group_by(DiscoveredTool.category).all()
-    
-    # Source tracking
-    sources = db.query(SourceTracking).all()
-    
-    # Health check status
-    total_tools = db.query(func.count(DiscoveredTool.id)).scalar()
-    health_checked = db.query(func.count(DiscoveredTool.id)).filter(
-        DiscoveredTool.last_health_check.isnot(None)
-    ).scalar()
-    
-    return {
-        "coverage_report": {
-            "total_tools": total_tools,
-            "health_checked_tools": health_checked,
-            "health_coverage_percentage": round((health_checked / total_tools) * 100, 1) if total_tools > 0 else 0,
-            "tool_types": {item.tool_type: item.count for item in type_coverage},
-            "categories": {item.category: item.count for item in category_coverage},
-            "monitored_sources": [
-                {
-                    "name": source.source_name,
-                    "url": source.source_url,
-                    "last_checked": source.last_checked,
-                    "tools_found": source.new_tools_count,
-                    "is_active": source.is_active
-                }
-                for source in sources
-            ]
-        },
-        "note": "Coverage statistics as per PDF requirements"
-    }
-
-@router.get("/ai-tools/quality-stats")
-def get_quality_statistics(
-    db: Session = Depends(get_db),
-    current_user_id: int = Depends(auth.get_verified_user_id),
-):
-    """Get confidence score distribution and health check results"""
-    
-    # Confidence score distribution
-    confidence_ranges = [
-        (0.9, 1.0, "Excellent"),
-        (0.8, 0.9, "High"),
-        (0.7, 0.8, "Good"),
-        (0.6, 0.7, "Medium"),
-        (0.0, 0.6, "Low")
-    ]
-    
-    confidence_dist = {}
-    for min_conf, max_conf, label in confidence_ranges:
-        count = db.query(func.count(DiscoveredTool.id)).filter(
-            and_(
-                DiscoveredTool.confidence_score >= min_conf,
-                DiscoveredTool.confidence_score < max_conf
-            )
-        ).scalar()
-        confidence_dist[label] = count
-    
-    # Health check results
-    health_stats = {}
-    common_status_codes = [200, 404, 403, 500, 503]
-    
-    for code in common_status_codes:
-        count = db.query(func.count(DiscoveredTool.id)).filter(
-            DiscoveredTool.website_status == code
-        ).scalar()
-        health_stats[f"HTTP_{code}"] = count
-    
-    # User reports summary
-    total_reports = db.query(func.count(ToolReport.id)).scalar()
-    pending_reports = db.query(func.count(ToolReport.id)).filter(
-        ToolReport.status == 'pending'
-    ).scalar()
-    
-    return {
-        "quality_statistics": {
-            "confidence_distribution": confidence_dist,
-            "health_check_results": health_stats,
-            "user_feedback": {
-                "total_reports": total_reports,
-                "pending_reports": pending_reports,
-                "resolved_reports": total_reports - pending_reports
-            }
-        },
-        "note": "Quality statistics as per PDF requirements"
-    }
-
-# ================================================================
-# EXPORT FUNCTIONALITY (From PDF)
-# ================================================================
-
-@router.get("/ai-tools/export")
-def export_tools(
-    format: str = Query("json", regex="^(json|csv)$", description="Export format: json or csv"),
-    confidence_min: float = Query(0.0, ge=0.0, le=1.0),
-    tool_type: Optional[str] = Query(None),
-    limit: int = Query(1000, ge=1, le=10000),
-    db: Session = Depends(get_db),
-    current_user_id: int = Depends(auth.get_verified_user_id),
-):
-    """Export tools in JSON or CSV format"""
-    
-    query = db.query(DiscoveredTool).filter(
-        DiscoveredTool.confidence_score >= confidence_min
-    )
-    
-    if tool_type:
-        query = query.filter(DiscoveredTool.tool_type == tool_type)
-    
-    tools = query.order_by(desc(DiscoveredTool.confidence_score)).limit(limit).all()
-    
-    if format == "csv":
-        # Convert to CSV format
-        import csv
-        import io
-        
-        output = io.StringIO()
-        writer = csv.writer(output)
-        
-        # Headers
-        writer.writerow([
-            'name', 'website', 'description', 'tool_type', 'category', 
-            'pricing', 'confidence_score', 'website_status', 'last_health_check'
-        ])
-        
-        # Data
-        for tool in tools:
-            writer.writerow([
-                tool.name, tool.website, tool.description, tool.tool_type,
-                tool.category, tool.pricing, tool.confidence_score,
-                tool.website_status, tool.last_health_check
-            ])
-        
-        csv_content = output.getvalue()
-        output.close()
-        
-        return {
-            "format": "csv",
-            "content": csv_content,
-            "count": len(tools),
-            "note": "CSV export as per PDF requirements"
-        }
-    
-    else:  # JSON format
-        tools_data = []
-        for tool in tools:
-            tools_data.append({
+        "tools": [
+            {
                 "name": tool.name,
                 "website": tool.website,
                 "description": tool.description,
-                "tool_type": tool.tool_type,
-                "category": tool.category,
-                "pricing": tool.pricing,
-                "confidence_score": tool.confidence_score,
-                "website_status": tool.website_status,
-                "last_health_check": tool.last_health_check.isoformat() if tool.last_health_check else None,
-                "created_at": tool.created_at.isoformat() if tool.created_at else None
-            })
-        
-        return {
-            "format": "json",
-            "tools": tools_data,
-            "count": len(tools),
-            "filters_applied": {
-                "confidence_min": confidence_min,
-                "tool_type": tool_type
-            },
-            "note": "JSON export as per PDF requirements"
-        }
-
-# ================================================================
-# USER FEEDBACK SYSTEM (From PDF)
-# ================================================================
-
-@router.post("/ai-tools/{tool_id}/report")
-def report_tool_issue(
-    tool_id: int,
-    report_data: dict,
-    db: Session = Depends(get_db),
-    current_user_id: int = Depends(auth.get_verified_user_id),
-):
-    """Report issue with a tool (dead link, wrong pricing, etc.)"""
-    
-    # Validate tool exists
-    tool = db.query(DiscoveredTool).filter(DiscoveredTool.id == tool_id).first()
-    if not tool:
-        raise HTTPException(status_code=404, detail="Tool not found")
-    
-    # Validate report type
-    valid_report_types = ['dead_link', 'wrong_pricing', 'wrong_category', 'outdated_info', 'other']
-    report_type = report_data.get('report_type')
-    
-    if report_type not in valid_report_types:
-        raise HTTPException(
-            status_code=400, 
-            detail=f"Invalid report type. Must be one of: {valid_report_types}"
-        )
-    
-    # Create report
-    report = ToolReport(
-        tool_id=tool_id,
-        user_id=current_user_id,
-        report_type=report_type,
-        description=report_data.get('description', ''),
-        status='pending'
-    )
-    
-    db.add(report)
-    
-    # Increment user_reports counter on tool
-    tool.user_reports = (tool.user_reports or 0) + 1
-    
-    # Lower confidence score if multiple reports
-    if tool.user_reports >= 3 and tool.confidence_score and tool.confidence_score > 0.3:
-        tool.confidence_score = max(0.3, tool.confidence_score - 0.1)
-    
-    try:
-        db.commit()
-        db.refresh(report)
-        
-        return {
-            "success": True,
-            "report_id": report.id,
-            "message": "Issue reported successfully",
-            "tool_reports_count": tool.user_reports,
-            "note": "Report submitted as per PDF user feedback system"
-        }
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=f"Failed to save report: {str(e)}")
-
-@router.get("/ai-tools/{tool_id}/reports")
-def get_tool_reports(
-    tool_id: int,
-    db: Session = Depends(get_db),
-    current_user_id: int = Depends(auth.get_verified_user_id),
-):
-    """Get all reports for a specific tool"""
-    
-    reports = db.query(ToolReport).filter(ToolReport.tool_id == tool_id).all()
-    
-    return {
-        "tool_id": tool_id,
-        "reports": [
-            {
-                "id": report.id,
-                "report_type": report.report_type,
-                "description": report.description,
-                "status": report.status,
-                "created_at": report.created_at,
-                "resolved_at": report.resolved_at
+                "tool_type_detected": tool.tool_type_detected,
+                "activity_score": tool.activity_score,
+                "github_stars": tool.github_stars,
+                "npm_weekly_downloads": tool.npm_weekly_downloads,
+                "is_actively_maintained": tool.is_actively_maintained,
+                "last_activity_check": tool.last_activity_check
             }
-            for report in reports
+            for tool in tools
         ],
-        "total_reports": len(reports),
-        "note": "Tool reports as per PDF user feedback system"
+        "count": len(tools),
+        "activity_threshold": activity_threshold,
+        "note": "High-activity tools using unified assessment system"
     }
 
-# ================================================================
-# HEALTH CHECK ENDPOINTS (From PDF)
-# ================================================================
-
-@router.post("/admin/health-checks/run")
-def run_health_checks(
-    batch_size: int = Query(100, ge=10, le=500, description="Tools to check per batch"),
-    max_tools: Optional[int] = Query(None, description="Maximum tools to check"),
+@router.post("/admin/activity-assessment/run")
+def run_activity_assessment(
+    batch_size: int = Query(100, ge=10, le=500),
+    max_tools: Optional[int] = Query(None),
     db: Session = Depends(get_db),
     current_user_id: int = Depends(auth.get_verified_user_id),
 ):
-    """Manually trigger health checks on tools"""
+    """Run unified activity assessment on tools"""
     
     try:
-        result = health_check_service.sync_run_daily_health_checks(batch_size, max_tools)
+        result = unified_activity_service.sync_assess_tools_batch(batch_size, max_tools)
         
         return {
             "success": True,
-            "health_check_results": result,
-            "note": "Health checks completed as per PDF automated quality checks"
+            "assessment_results": result,
+            "note": "Unified activity assessment completed"
         }
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Health check failed: {str(e)}"
+            detail=f"Activity assessment failed: {str(e)}"
         )
 
-@router.get("/admin/health-checks/status")
-def get_health_check_status(
+@router.get("/admin/activity-status")
+def get_activity_status(
     db: Session = Depends(get_db),
     current_user_id: int = Depends(auth.get_verified_user_id),
 ):
-    """Get health check status overview"""
+    """Get activity status overview"""
     
-    # Tools by health status
-    total_tools = db.query(func.count(DiscoveredTool.id)).filter(
-        DiscoveredTool.website.isnot(None)
+    # Tools by activity level
+    total_tools = db.query(func.count(DiscoveredTool.id)).scalar()
+    
+    highly_active = db.query(func.count(DiscoveredTool.id)).filter(
+        DiscoveredTool.activity_score >= 0.8
     ).scalar()
     
-    healthy_tools = db.query(func.count(DiscoveredTool.id)).filter(
-        DiscoveredTool.website_status == 200
-    ).scalar()
-    
-    never_checked = db.query(func.count(DiscoveredTool.id)).filter(
-        DiscoveredTool.last_health_check.is_(None)
-    ).scalar()
-    
-    # Recent health check failures
-    cutoff_time = datetime.utcnow() - timedelta(hours=24)
-    recent_failures = db.query(func.count(DiscoveredTool.id)).filter(
+    moderately_active = db.query(func.count(DiscoveredTool.id)).filter(
         and_(
-            DiscoveredTool.last_health_check >= cutoff_time,
-            DiscoveredTool.website_status != 200
+            DiscoveredTool.activity_score >= 0.5,
+            DiscoveredTool.activity_score < 0.8
         )
     ).scalar()
     
+    low_activity = db.query(func.count(DiscoveredTool.id)).filter(
+        DiscoveredTool.activity_score < 0.5
+    ).scalar()
+    
+    never_assessed = db.query(func.count(DiscoveredTool.id)).filter(
+        DiscoveredTool.last_activity_check.is_(None)
+    ).scalar()
+    
+    # Activity by tool type
+    activity_by_type = db.query(
+        DiscoveredTool.tool_type_detected,
+        func.avg(DiscoveredTool.activity_score).label('avg_activity'),
+        func.count(DiscoveredTool.id).label('count')
+    ).filter(
+        DiscoveredTool.tool_type_detected.isnot(None)
+    ).group_by(DiscoveredTool.tool_type_detected).all()
+    
     return {
-        "health_overview": {
-            "total_tools_with_websites": total_tools,
-            "healthy_tools": healthy_tools,
-            "health_percentage": round((healthy_tools / total_tools) * 100, 1) if total_tools > 0 else 0,
-            "never_checked": never_checked,
-            "recent_failures_24h": recent_failures
+        "activity_overview": {
+            "total_tools": total_tools,
+            "highly_active": highly_active,
+            "moderately_active": moderately_active,
+            "low_activity": low_activity,
+            "never_assessed": never_assessed,
+            "high_activity_percentage": round((highly_active / total_tools) * 100, 1) if total_tools > 0 else 0
         },
-        "note": "Health check metrics as per PDF dashboard requirements"
+        "activity_by_tool_type": {
+            f"{item.tool_type_detected}": {
+                "avg_activity_score": round(float(item.avg_activity), 2) if item.avg_activity else 0,
+                "tool_count": item.count
+            }
+            for item in activity_by_type
+        },
+        "note": "Unified activity metrics across all tool types"
     }
 
-# ================================================================
-# ENHANCED DISCOVERY ENDPOINTS (From PDF)
-# ================================================================
-
-@router.post("/admin/discovery/ai-directories")
-def discover_from_ai_directories(
-    target_tools: int = Query(200, ge=10, le=1000, description="Target number of tools to discover"),
+@router.get("/test-unified-activity")
+def test_unified_activity(
+    limit: int = Query(10, ge=1, le=50),
     db: Session = Depends(get_db),
     current_user_id: int = Depends(auth.get_verified_user_id),
 ):
-    """Discover tools from AI-specific directories (There's An AI For That, etc.)"""
+    """Test the unified activity system"""
     
-    try:
-        result = enhanced_discovery_service.sync_discover_from_ai_directories(target_tools)
-        
-        return {
-            "success": True,
-            "discovery_results": result,
-            "note": "AI directory discovery as per PDF new sources section"
-        }
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"AI directory discovery failed: {str(e)}"
-        )
-
-@router.post("/admin/discovery/smart-pipeline")
-def run_smart_discovery_pipeline(
-    target_tools: int = Query(500, ge=50, le=2000, description="Target number of tools"),
-    db: Session = Depends(get_db),
-    current_user_id: int = Depends(auth.get_verified_user_id),
-):
-    """Run the smart discovery pipeline with source freshness checking"""
+    # Get a few tools to test
+    tools = db.query(DiscoveredTool).limit(5).all()
     
-    try:
-        result = enhanced_discovery_service.sync_run_smart_discovery_pipeline(target_tools)
-        
-        return {
-            "success": True,
-            "pipeline_results": result,
-            "note": "Smart discovery logic as per PDF requirements"
-        }
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Smart discovery pipeline failed: {str(e)}"
-        )
-
-@router.get("/admin/discovery/sources")
-def get_discovery_sources(
-    db: Session = Depends(get_db),
-    current_user_id: int = Depends(auth.get_verified_user_id),
-):
-    """Get information about discovery sources"""
+    if not tools:
+        return {"message": "No tools found in database"}
     
-    sources = db.query(SourceTracking).all()
-    
-    # Calculate source productivity
-    source_stats = []
-    for source in sources:
-        hours_since_check = None
-        if source.last_checked:
-            hours_since_check = (datetime.utcnow() - source.last_checked).total_seconds() / 3600
-        
-        source_stats.append({
-            "name": source.source_name,
-            "url": source.source_url,
-            "is_active": source.is_active,
-            "last_checked": source.last_checked,
-            "hours_since_check": round(hours_since_check, 1) if hours_since_check else None,
-            "tools_found_last_run": source.new_tools_count,
-            "created_at": source.created_at
-        })
-    
-    return {
-        "discovery_sources": source_stats,
-        "total_sources": len(sources),
-        "active_sources": len([s for s in sources if s.is_active]),
-        "note": "Source tracking as per PDF source tracking table"
-    }
-
-# ================================================================
-# ENHANCED TOOL ENDPOINTS WITH AGENT INSTRUCTIONS
-# ================================================================
-
-@router.get("/ai-tools/recommended")
-def get_recommended_tools(
-    tool_type: Optional[str] = Query(None, description="Filter by tool type"),
-    confidence_min: float = Query(0.8, description="Minimum confidence score"),
-    limit: int = Query(20, ge=1, le=100),
-    db: Session = Depends(get_db),
-    current_user_id: int = Depends(auth.get_verified_user_id),
-):
-    """Get recommended tools with confidence levels (for agent use)"""
-    
-    query = db.query(DiscoveredTool).filter(
-        DiscoveredTool.confidence_score >= confidence_min
-    )
-    
-    if tool_type:
-        query = query.filter(DiscoveredTool.tool_type == tool_type)
-    
-    # Prioritize recently health-checked tools
-    tools = query.order_by(
-        desc(DiscoveredTool.confidence_score),
-        desc(DiscoveredTool.last_health_check)
-    ).limit(limit).all()
-    
-    # Format for agent with quality transparency
-    tools_with_quality = []
+    # Test tool type detection
+    results = []
     for tool in tools:
-        health_status = "unknown"
-        if tool.last_health_check:
-            hours_since_check = (datetime.utcnow() - tool.last_health_check).total_seconds() / 3600
-            if tool.website_status == 200:
-                health_status = f"healthy (checked {hours_since_check:.0f}h ago)"
-            else:
-                health_status = f"issues detected (HTTP {tool.website_status})"
-        
-        tools_with_quality.append({
+        tool_type = unified_activity_service.detect_tool_type(tool)
+        results.append({
             "name": tool.name,
             "website": tool.website,
-            "description": tool.description,
-            "tool_type": tool.tool_type,
-            "category": tool.category,
-            "pricing": tool.pricing,
-            "confidence_level": tool.confidence_score,
-            "health_status": health_status,
-            "user_reports": tool.user_reports or 0,
-            "features": tool.features
+            "detected_type": tool_type,
+            "current_activity_score": tool.activity_score,
+            "current_tool_type": tool.tool_type_detected
         })
     
     return {
-        "recommended_tools": tools_with_quality,
-        "count": len(tools_with_quality),
-        "confidence_threshold": confidence_min,
-        "quality_transparency": "Confidence levels and health status shown as per PDF agent instructions",
-        "note": "High-confidence tools for agent recommendations"
+        "test_results": results,
+        "message": "Unified activity service is working!",
+        "note": "This tests tool type detection from the unified service"
     }
 
 # ================================================================
-# EXISTING DISCOVERY ENDPOINTS (Keep for backward compatibility)
+# SIMPLIFIED TOOL ENDPOINTS
 # ================================================================
 
-@router.post("/admin/discover-tools")
-def admin_discover_tools(
-    request_data: dict,
+@router.get("/tools/stats")
+def get_tools_statistics(
     db: Session = Depends(get_db),
     current_user_id: int = Depends(auth.get_verified_user_id),
 ):
-    """Admin endpoint to manually trigger tool discovery (legacy endpoint)"""
+    """Get basic statistics about discovered tools"""
     
-    discovery_type = request_data.get("type", "github")
-    target_tools = request_data.get("target_tools", 50)
+    # Basic counts
+    total_count = db.query(func.count(DiscoveredTool.id)).scalar()
     
-    if discovery_type == "ai_directories":
-        # Use new enhanced discovery
-        result = enhanced_discovery_service.sync_discover_from_ai_directories(target_tools)
-    elif discovery_type == "smart_pipeline":
-        result = enhanced_discovery_service.sync_run_smart_discovery_pipeline(target_tools)
-    elif discovery_type == "github":
-        from app.services.real_apis_service import unified_apis_service
-        result = unified_apis_service.run_sync_discover_github(target_tools)
-    elif discovery_type == "hackernews":
-        from app.services.real_apis_service import unified_apis_service
-        result = unified_apis_service.run_sync_discover_hackernews(target_tools)
-    elif discovery_type == "npm":
-        from app.services.real_apis_service import unified_apis_service
-        result = unified_apis_service.run_sync_discover_npm(target_tools)
-    elif discovery_type == "all":
-        from app.services.real_apis_service import unified_apis_service
-        result = unified_apis_service.run_sync_discover_all_real_apis(target_tools)
-    else:
-        return {"error": f"Unknown discovery type: {discovery_type}"}
+    # Count by detected tool type
+    type_stats = db.query(
+        DiscoveredTool.tool_type_detected,
+        func.count(DiscoveredTool.id).label('count')
+    ).filter(
+        DiscoveredTool.tool_type_detected.isnot(None)
+    ).group_by(DiscoveredTool.tool_type_detected).all()
+    
+    # Activity metrics
+    high_activity = db.query(func.count(DiscoveredTool.id)).filter(
+        DiscoveredTool.activity_score >= 0.7
+    ).scalar()
+    
+    activity_checked = db.query(func.count(DiscoveredTool.id)).filter(
+        DiscoveredTool.last_activity_check.isnot(None)
+    ).scalar()
+    
+    actively_maintained = db.query(func.count(DiscoveredTool.id)).filter(
+        DiscoveredTool.is_actively_maintained == True
+    ).scalar()
     
     return {
-        "success": True,
-        "discovery_type": discovery_type,
-        "result": result,
-        "note": "Legacy discovery endpoint - consider using new enhanced endpoints"
+        "total_tools": total_count,
+        "by_detected_type": {stat.tool_type_detected: stat.count for stat in type_stats},
+        "activity_metrics": {
+            "high_activity_tools": high_activity,
+            "activity_checked_tools": activity_checked,
+            "actively_maintained_tools": actively_maintained,
+            "activity_coverage": round((activity_checked / total_count) * 100, 1) if total_count > 0 else 0
+        },
+        "note": "Statistics using unified activity assessment system"
     }
 
 @router.get("/system-status")
 def get_system_status(
     current_user_id: int = Depends(auth.get_verified_user_id),
 ):
-    """Get enhanced system status with quality features"""
+    """Get simplified system status"""
     
     return {
-        "database_integration": "✅ PostgreSQL MCP Server with Quality Tracking",
-        "agent_access": "✅ Direct database queries via MCP with confidence filtering",
-        "quality_features": {
-            "health_checks": "✅ Automated daily health checks",
-            "user_feedback": "✅ Report issue system", 
-            "confidence_scoring": "✅ Source reliability tracking",
-            "duplicate_detection": "✅ Canonical URL matching"
-        },
-        "discovery_methods": {
-            "ai_directories": "✅ There's An AI For That, Futurepedia, etc.",
-            "smart_pipeline": "✅ Source freshness checking",
-            "health_monitoring": "✅ Website status validation",
-            "api_sources": "✅ GitHub, NPM, Stack Overflow, etc."
+        "database_integration": "✅ PostgreSQL with Unified Activity Tracking",
+        "agent_access": "✅ Direct database queries via MCP with activity filtering",
+        "unified_features": {
+            "activity_assessment": "✅ GitHub, NPM, PyPI, and web app assessment",
+            "tool_type_detection": "✅ Automatic detection of tool platforms",
+            "unified_scoring": "✅ Single activity score across all tool types",
+            "source_specific_metrics": "✅ Stars, downloads, releases, etc."
         },
         "new_endpoints": [
-            "/ai-tools/high-confidence",
-            "/ai-tools/health-checked", 
-            "/ai-tools/coverage",
-            "/ai-tools/quality-stats",
-            "/ai-tools/export",
-            "/ai-tools/{id}/report"
+            "/ai-tools/high-activity",
+            "/admin/activity-assessment/run",
+            "/admin/activity-status",
+            "/test-unified-activity"
         ],
-        "architecture": "Agent → PostgreSQL MCP → Enhanced Database with Quality Tracking",
-        "pdf_implementation": "✅ All PDF requirements implemented"
+        "architecture": "Agent → PostgreSQL MCP → Unified Activity Assessment",
+        "improvement": "✅ Replaced separate health checkers with unified system"
     }
-
-# ================================================================
-# DATABASE STATISTICS (Enhanced)
-# ================================================================
-
-@router.get("/tools/stats")
-def get_enhanced_tools_statistics(
-    db: Session = Depends(get_db),
-    current_user_id: int = Depends(auth.get_verified_user_id),
-):
-    """Get enhanced statistics about discovered tools"""
-    
-    # Basic counts
-    total_count = db.query(func.count(DiscoveredTool.id)).scalar()
-    
-    # Count by tool type
-    type_stats = db.query(
-        DiscoveredTool.tool_type,
-        func.count(DiscoveredTool.id).label('count')
-    ).group_by(DiscoveredTool.tool_type).all()
-    
-    # Count by pricing
-    pricing_stats = db.query(
-        DiscoveredTool.pricing,
-        func.count(DiscoveredTool.id).label('count')
-    ).group_by(DiscoveredTool.pricing).all()
-    
-    # Quality metrics
-    high_confidence = db.query(func.count(DiscoveredTool.id)).filter(
-        DiscoveredTool.confidence_score >= 0.8
-    ).scalar()
-    
-    health_checked = db.query(func.count(DiscoveredTool.id)).filter(
-        DiscoveredTool.last_health_check.isnot(None)
-    ).scalar()
-    
-    healthy_tools = db.query(func.count(DiscoveredTool.id)).filter(
-        DiscoveredTool.website_status == 200
-    ).scalar()
-    
-    tools_with_reports = db.query(func.count(DiscoveredTool.id)).filter(
-        DiscoveredTool.user_reports > 0
-    ).scalar()
-    
-    return {
-        "total_tools": total_count,
-        "by_type": {stat.tool_type: stat.count for stat in type_stats},
-        "by_pricing": {stat.pricing: stat.count for stat in pricing_stats},
-        "quality_metrics": {
-            "high_confidence_tools": high_confidence,
-            "health_checked_tools": health_checked,
-            "healthy_tools": healthy_tools,
-            "tools_with_user_reports": tools_with_reports,
-            "confidence_coverage": round((high_confidence / total_count) * 100, 1) if total_count > 0 else 0,
-            "health_coverage": round((health_checked / total_count) * 100, 1) if total_count > 0 else 0
-        },
-        "note": "Enhanced statistics with quality tracking as per PDF requirements"
-    }
-
-@router.get("/admin/quality-dashboard")
-def get_quality_dashboard(
-    db: Session = Depends(get_db),
-    current_user_id: int = Depends(auth.get_verified_user_id),
-):
-    """Get comprehensive quality dashboard as specified in PDF"""
-    
-    try:
-        dashboard_data = quality_dashboard_service.get_comprehensive_dashboard(db)
-        
-        return {
-            "success": True,
-            "dashboard": dashboard_data,
-            "note": "Quality dashboard implementing all PDF requirements"
-        }
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to generate quality dashboard: {str(e)}"
-        )     

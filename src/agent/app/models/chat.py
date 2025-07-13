@@ -52,12 +52,35 @@ class DiscoveredTool(Base):
     confidence_score = Column(Float, index=True)
     source_data = Column(Text)
     
-    # Quality tracking fields (from PDF)
+    # Quality tracking fields (existing)
     last_health_check = Column(DateTime(timezone=True))
     website_status = Column(Integer, index=True)  # HTTP status codes (200, 404, 500, etc.)
     user_reports = Column(Integer, default=0, nullable=False)  # Count of user-reported issues
     canonical_url = Column(String, index=True)  # Clean version for duplicate detection
     company_name = Column(String)  # To catch same company with multiple tool names
+    
+    # NEW: Unified activity tracking fields
+    tool_type_detected = Column(String)  # github_repo, npm_package, web_app, etc.
+    activity_score = Column(Float, index=True)  # 0.0-1.0 unified score
+    last_activity_check = Column(DateTime(timezone=True))  # replaces last_health_check
+    
+    # NEW: Source-specific metrics
+    github_stars = Column(Integer)
+    github_last_commit = Column(DateTime(timezone=True))
+    github_contributors = Column(Integer)
+    
+    npm_weekly_downloads = Column(Integer)
+    npm_last_version = Column(String)
+    npm_last_update = Column(DateTime(timezone=True))
+    
+    pypi_downloads = Column(Integer)
+    pypi_last_release = Column(DateTime(timezone=True))
+    
+    # NEW: Quality indicators
+    is_actively_maintained = Column(Boolean, default=False)
+    community_size_score = Column(Float)
+    usage_popularity_score = Column(Float)
+    maintenance_quality_score = Column(Float)
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
