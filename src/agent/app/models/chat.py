@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Float
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Float, Boolean
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -13,6 +13,7 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
     is_active = Column(Integer, default=1)
     conversations = relationship("Conversation", back_populates="user")
+    tool_reports = relationship("ToolReport", back_populates="user")
 
 class Conversation(Base):
     __tablename__ = "conversations"
@@ -44,11 +45,53 @@ class DiscoveredTool(Base):
     name = Column(String, nullable=False, index=True)
     website = Column(String)
     description = Column(Text)
-    tool_type = Column(String, nullable=False, index=True)  # "ai_service", "code_editor", "plugin"
-    category = Column(String)  # "API", "SaaS", "VSCode Extension", "Chrome Extension", etc.
-    pricing = Column(Text)  # "Free", "Paid", "Freemium", "Open Source"
-    features = Column(Text)  # Key features as text
-    confidence_score = Column(Float)
-    source_data = Column(Text)  # Raw JSON data from discovery
+    tool_type = Column(String, nullable=False, index=True)
+    category = Column(String)
+    pricing = Column(Text)
+    features = Column(Text)
+    confidence_score = Column(Float, index=True)
+    source_data = Column(Text)
+    
+    # Quality tracking fields (from PDF)
+    last_health_check = Column(DateTime(timezone=True))
+    website_status = Column(Integer, index=True)  # HTTP status codes (200, 404, 500, etc.)
+    user_reports = Column(Integer, default=0, nullable=False)  # Count of user-reported issues
+    canonical_url = Column(String, index=True)  # Clean version for duplicate detection
+    company_name = Column(String)  # To catch same company with multiple tool names
+    
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    # Relationships
+    reports = relationship("ToolReport", back_populates="tool")
+
+class SourceTracking(Base):
+    """Track which sources we monitor for tool discovery"""
+    __tablename__ = "source_tracking"
+
+    id = Column(Integer, primary_key=True, index=True)
+    source_name = Column(String, nullable=False, unique=True, index=True)
+    source_url = Column(String)
+    last_checked = Column(DateTime(timezone=True))
+    last_modified = Column(DateTime(timezone=True))
+    new_tools_count = Column(Integer, default=0, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+class ToolReport(Base):
+    """User feedback system for tool quality"""
+    __tablename__ = "tool_reports"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tool_id = Column(Integer, ForeignKey("discovered_tools.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    report_type = Column(String, nullable=False)  # 'dead_link', 'wrong_pricing', 'wrong_category', 'outdated_info'
+    description = Column(Text)
+    status = Column(String, default='pending', nullable=False)  # 'pending', 'resolved', 'rejected'
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    resolved_at = Column(DateTime(timezone=True))
+    
+    # Relationships
+    tool = relationship("DiscoveredTool", back_populates="reports")
+    user = relationship("User", back_populates="tool_reports")
