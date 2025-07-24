@@ -294,3 +294,43 @@ def get_system_status(
         "architecture": "Agent → PostgreSQL MCP → Unified Activity Assessment",
         "improvement": "✅ Replaced separate health checkers with unified system"
     }
+
+# Add these new endpoints to your existing chat.py file
+
+@router.post("/admin/discovery/enhanced")
+def run_enhanced_discovery(
+    strategy: str = Query("standard", description="Discovery strategy"),
+    db: Session = Depends(get_db),
+    current_user_id: int = Depends(auth.get_verified_user_id),
+):
+    """Run enhanced discovery with APIs + Web Scraping"""
+    try:
+        from enhanced_discovery_service import enhanced_discovery_service
+        result = enhanced_discovery_service.sync_discover_from_all_sources(
+            target_tools=200 if strategy == "standard" else 500
+        )
+        return {
+            "success": True,
+            "strategy": strategy,
+            "discovery_result": result
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Enhanced discovery failed: {str(e)}")
+
+@router.get("/admin/discovery/sources")
+def get_discovery_sources(
+    current_user_id: int = Depends(auth.get_verified_user_id),
+):
+    """Get available discovery sources"""
+    return {
+        "api_sources": [
+            "GitHub API", "NPM Registry", "PyPI JSON API", 
+            "Stack Overflow API", "Hacker News API"
+        ],
+        "scraping_sources": [
+            "Product Hunt", "AI Tools FYI", "There's An AI For That",
+            "Futurepedia", "Toolify", "GPT Hunter"
+        ],
+        "total_sources": 11,
+        "capabilities": "APIs + Web Scraping for maximum AI tool coverage"
+    }
