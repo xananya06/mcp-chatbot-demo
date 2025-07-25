@@ -1,1455 +1,1053 @@
-# src/agent/app/services/real_apis_service.py
-# ENHANCED VERSION - Adding Product Hunt, Reddit, and Crunchbase APIs
+# Add these methods to your existing UnifiedRealAPIsService class in real_apis_service.py
 
-import asyncio
-import aiohttp
-import time
-import json
-import os
-from typing import List, Dict, Any, Optional
-from datetime import datetime, timedelta
-from sqlalchemy.orm import Session
+# ================================================================
+# ENTERPRISE-GRADE INCREMENTAL DISCOVERY METHODS
+# ================================================================
 
-from app.db.database import SessionLocal
-from app.services.chat_service import save_discovered_tools_with_deduplication
+def run_sync_discover_all_real_apis_incremental(self, target_tools: int = 30000, incremental_params: Dict[str, Any] = None) -> Dict[str, Any]:
+    """Enterprise-grade incremental discovery for all real APIs"""
+    return asyncio.run(self.discover_all_real_apis_incremental(target_tools, incremental_params))
 
-class UnifiedRealAPIsService:
-    """
-    Unified Real APIs Service - ENHANCED with Product Hunt, Reddit, and Crunchbase
-    All official APIs, no web scraping
-    """
+def run_sync_discover_no_auth_apis_incremental(self, target_tools: int = 15000, incremental_params: Dict[str, Any] = None) -> Dict[str, Any]:
+    """Enterprise-grade incremental discovery for no-auth APIs"""
+    return asyncio.run(self.discover_no_auth_apis_incremental(target_tools, incremental_params))
+
+def run_sync_discover_github_incremental(self, target_tools: int = 6000, incremental_params: Dict[str, Any] = None) -> Dict[str, Any]:
+    """Enterprise-grade incremental GitHub discovery"""
+    return asyncio.run(self._discover_single_api_incremental("github", self._discover_github_incremental, target_tools, incremental_params))
+
+def run_sync_discover_npm_incremental(self, target_tools: int = 4000, incremental_params: Dict[str, Any] = None) -> Dict[str, Any]:
+    """Enterprise-grade incremental NPM discovery"""
+    return asyncio.run(self._discover_single_api_incremental("npm", self._discover_npm_incremental, target_tools, incremental_params))
+
+def run_sync_discover_reddit_incremental(self, target_tools: int = 3000, incremental_params: Dict[str, Any] = None) -> Dict[str, Any]:
+    """Enterprise-grade incremental Reddit discovery"""
+    return asyncio.run(self._discover_single_api_incremental("reddit", self._discover_reddit_incremental, target_tools, incremental_params))
+
+def run_sync_discover_hackernews_incremental(self, target_tools: int = 2500, incremental_params: Dict[str, Any] = None) -> Dict[str, Any]:
+    """Enterprise-grade incremental Hacker News discovery"""
+    return asyncio.run(self._discover_single_api_incremental("hackernews", self._discover_hackernews_incremental, target_tools, incremental_params))
+
+def run_sync_discover_producthunt_incremental(self, target_tools: int = 4000, incremental_params: Dict[str, Any] = None) -> Dict[str, Any]:
+    """Enterprise-grade incremental Product Hunt discovery"""
+    return asyncio.run(self._discover_single_api_incremental("producthunt", self._discover_producthunt_incremental, target_tools, incremental_params))
+
+def run_sync_discover_crunchbase_incremental(self, target_tools: int = 2000, incremental_params: Dict[str, Any] = None) -> Dict[str, Any]:
+    """Enterprise-grade incremental Crunchbase discovery"""
+    return asyncio.run(self._discover_single_api_incremental("crunchbase", self._discover_crunchbase_incremental, target_tools, incremental_params))
+
+def run_sync_discover_stackoverflow_incremental(self, target_tools: int = 3000, incremental_params: Dict[str, Any] = None) -> Dict[str, Any]:
+    """Enterprise-grade incremental Stack Overflow discovery"""
+    return asyncio.run(self._discover_single_api_incremental("stackoverflow", self._discover_stackoverflow_incremental, target_tools, incremental_params))
+
+# ================================================================
+# CORE INCREMENTAL ASYNC METHODS
+# ================================================================
+
+async def discover_all_real_apis_incremental(self, target_tools: int = 30000, incremental_params: Dict[str, Any] = None) -> Dict[str, Any]:
+    """Enterprise incremental discovery for all real APIs"""
     
-    def __init__(self):
-        # Real API configurations - NO SCRAPING
-        self.apis = {
-            'hackernews': {
-                'base_url': 'https://hacker-news.firebaseio.com/v0',
-                'rate_limit': 0.1,
-                'requests_per_hour': 10000,
-                'auth_required': False,
-                'quality': 'very_high'
-            },
-            'stackoverflow': {
-                'base_url': 'https://api.stackexchange.com/2.3',
-                'rate_limit': 0.1,
-                'requests_per_hour': 300,
-                'auth_required': False,
-                'quality': 'high'
-            },
-            'pypi': {
-                'base_url': 'https://pypi.org',
-                'rate_limit': 0.3,
-                'requests_per_hour': 1000,
-                'auth_required': False,
-                'quality': 'medium'
-            },
-            'npm': {
-                'base_url': 'https://registry.npmjs.org',
-                'rate_limit': 0.2,
-                'requests_per_hour': 3600,
-                'auth_required': False,
-                'quality': 'medium'
-            },
-            'vscode': {
-                'base_url': 'https://marketplace.visualstudio.com/_apis/public/gallery',
-                'rate_limit': 0.5,
-                'requests_per_hour': 3600,
-                'auth_required': False,
-                'quality': 'high'
-            },
-            'github': {
-                'token': os.getenv('GITHUB_TOKEN'),
-                'base_url': 'https://api.github.com',
-                'rate_limit': 0.1 if os.getenv('GITHUB_TOKEN') else 1.0,
-                'requests_per_hour': 5000 if os.getenv('GITHUB_TOKEN') else 60,
-                'auth_required': False,
-                'quality': 'high'
-            },
-            'devto': {
-                'token': os.getenv('DEV_TO_TOKEN'),
-                'base_url': 'https://dev.to/api',
-                'rate_limit': 0.5,
-                'requests_per_hour': 1000,
-                'auth_required': True,
-                'quality': 'high'
-            },
-            'stackexchange': {
-                'key': os.getenv('STACKEXCHANGE_KEY'),
-                'base_url': 'https://api.stackexchange.com/2.3',
-                'rate_limit': 0.1,
-                'requests_per_hour': 10000,
-                'auth_required': False,
-                'quality': 'high'
-            },
-            # NEW: Product Hunt API
-            'producthunt': {
-                'client_id': os.getenv('PRODUCT_HUNT_CLIENT_ID'),
-                'client_secret': os.getenv('PRODUCT_HUNT_CLIENT_SECRET'),
-                'access_token': os.getenv('PRODUCT_HUNT_ACCESS_TOKEN'),
-                'base_url': 'https://api.producthunt.com/v2/api/graphql',
-                'oauth_url': 'https://api.producthunt.com/v2/oauth/token',
-                'rate_limit': 1.0,
-                'requests_per_hour': 1000,
-                'auth_required': True,
-                'quality': 'very_high'
-            },
-            # NEW: Reddit API
-            'reddit': {
-                'base_url': 'https://www.reddit.com',
-                'rate_limit': 2.0,  # Reddit requires 2 second delays
-                'requests_per_hour': 600,
-                'auth_required': False,
-                'quality': 'medium'
-            },
-            # NEW: Crunchbase API (basic endpoints)
-            'crunchbase': {
-                'api_key': os.getenv('CRUNCHBASE_API_KEY'),
-                'base_url': 'https://api.crunchbase.com/api/v4',
-                'rate_limit': 1.0,
-                'requests_per_hour': 200,
-                'auth_required': True,
-                'quality': 'high'
-            }
-        }
-        
-    # ================================================================
-    # MAIN DISCOVERY METHODS
-    # ================================================================
-
-    async def discover_all_real_apis(self, target_tools: int = 30000) -> Dict[str, Any]:
-        """Discover from ALL real APIs including new ones"""
-        
-        results = {
-            "discovery_id": f"unified_real_apis_{int(time.time())}",
-            "start_time": datetime.utcnow().isoformat(),
-            "target_tools": target_tools,
-            "total_discovered": 0,
-            "total_saved": 0,
-            "api_results": {},
-            "processing_mode": "enhanced_real_apis_only"
-        }
-        
-        print(f"🚀 ENHANCED UNIFIED REAL APIs DISCOVERY")
-        print(f"🎯 Target: {target_tools} tools")
-        print(f"✅ Enhanced with Product Hunt, Reddit, Crunchbase APIs")
-        print(f"💰 Cost: $0")
-        
-        # Enhanced API tasks including new ones
-        api_tasks = [
-            ("Product Hunt API", self._discover_producthunt, 4000),  # NEW - High priority
-            ("Hacker News API", self._discover_hackernews, 2000),
-            ("Stack Overflow API", self._discover_stackoverflow, 3000), 
-            ("GitHub API", self._discover_github, 5000),
-            ("NPM Registry API", self._discover_npm, 3000),
-            ("PyPI JSON API", self._discover_pypi, 2500),
-            ("VS Code Marketplace API", self._discover_vscode, 2000),
-            ("Reddit API", self._discover_reddit, 3000),  # NEW
-            ("Crunchbase API", self._discover_crunchbase, 2000),  # NEW
-            ("Dev.to API", self._discover_devto, 1500),
-            ("Stack Exchange API", self._discover_stackexchange, 3000)
-        ]
-        
-        # Check API readiness
-        ready_apis = []
-        for api_name, discovery_func, max_tools in api_tasks:
-            api_key = api_name.lower().replace(' api', '').replace(' ', '')
-            if self._is_api_ready(api_key):
-                ready_apis.append((api_name, discovery_func, max_tools))
+    # Handle incremental parameters
+    incremental_params = incremental_params or {}
+    force_full_scan = incremental_params.get("force_full_scan", False)
+    last_check_times = incremental_params.get("last_check_times", {})
+    
+    results = {
+        "discovery_id": f"incremental_all_apis_{int(time.time())}",
+        "start_time": datetime.utcnow().isoformat(),
+        "target_tools": target_tools,
+        "total_discovered": 0,
+        "total_saved": 0,
+        "total_skipped": 0,
+        "api_results": {},
+        "processing_mode": "incremental_real_apis",
+        "incremental_params": incremental_params
+    }
+    
+    print(f"🚀 INCREMENTAL ALL REAL APIs DISCOVERY")
+    print(f"🎯 Target: {target_tools} tools")
+    print(f"⚡ Mode: {'FULL SCAN' if force_full_scan else 'INCREMENTAL'}")
+    
+    # Enhanced incremental API tasks
+    api_tasks = [
+        ("GitHub API", "github", self._discover_github_incremental, 5000),
+        ("NPM Registry API", "npm", self._discover_npm_incremental, 3000),
+        ("Product Hunt API", "producthunt", self._discover_producthunt_incremental, 4000),
+        ("Reddit API", "reddit", self._discover_reddit_incremental, 3000),
+        ("Hacker News API", "hackernews", self._discover_hackernews_incremental, 2000),
+        ("Stack Overflow API", "stackoverflow", self._discover_stackoverflow_incremental, 3000),
+        ("Crunchbase API", "crunchbase", self._discover_crunchbase_incremental, 2000),
+        ("PyPI JSON API", "pypi", self._discover_pypi_incremental, 2500),
+        ("VS Code Marketplace API", "vscode", self._discover_vscode_incremental, 2000)
+    ]
+    
+    # Filter ready APIs
+    ready_apis = []
+    for api_name, api_key, discovery_func, max_tools in api_tasks:
+        if self._is_api_ready(api_key):
+            # Check if we should skip due to incremental logic
+            last_check = last_check_times.get(api_key)
+            should_skip = self._should_skip_api_incremental(api_key, last_check, force_full_scan)
+            
+            if should_skip:
+                print(f"⏭️  {api_name}: Skipped (recently checked)")
+                results["api_results"][api_name] = {
+                    "tools_discovered": 0,
+                    "tools_skipped": max_tools,  # Estimate skipped
+                    "processing_time": 0,
+                    "success": True,
+                    "incremental_skip": True,
+                    "last_check": last_check
+                }
+                results["total_skipped"] += max_tools
             else:
-                print(f"⚠️  {api_name}: Not configured (will skip)")
+                ready_apis.append((api_name, api_key, discovery_func, max_tools))
+        else:
+            print(f"⚠️  {api_name}: Not configured (will skip)")
+    
+    print(f"✅ APIs to process: {len(ready_apis)}")
+    print(f"⏭️ APIs skipped: {len([r for r in results['api_results'].values() if r.get('incremental_skip')])}")
+    
+    if not ready_apis:
+        print("🎯 All APIs recently checked - no discovery needed")
+        results["end_time"] = datetime.utcnow().isoformat()
+        return results
+    
+    # Process APIs that need updating
+    async with aiohttp.ClientSession(
+        timeout=aiohttp.ClientTimeout(total=30),
+        headers={'User-Agent': 'AI Tool Discovery System v4.0 - Incremental'}
+    ) as session:
         
-        print(f"✅ Ready APIs: {len(ready_apis)}/{len(api_tasks)}")
+        all_tools = []
         
-        # Create session properly
-        async with aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=30),
-            headers={'User-Agent': 'AI Tool Discovery System v4.0 - Enhanced APIs'}
-        ) as session:
-            
-            all_tools = []
-            
-            # Process each API
-            for api_name, discovery_func, max_tools in ready_apis:
-                if results["total_discovered"] >= target_tools:
-                    print(f"🎉 TARGET REACHED! {results['total_discovered']} tools")
-                    break
-                    
-                print(f"\n📡 Processing: {api_name}")
-                start_time = time.time()
+        for api_name, api_key, discovery_func, max_tools in ready_apis:
+            if results["total_discovered"] >= target_tools:
+                break
                 
-                try:
-                    tools = await discovery_func(session, max_tools)
-                    processing_time = time.time() - start_time
-                    
-                    results["api_results"][api_name] = {
-                        "tools_discovered": len(tools),
-                        "processing_time": round(processing_time, 2),
-                        "success": True,
-                        "api_type": "real_api"
-                    }
-                    
-                    results["total_discovered"] += len(tools)
-                    all_tools.extend(tools)
-                    
-                    print(f"  ✅ {api_name}: {len(tools)} tools ({processing_time:.1f}s)")
-                    
-                except Exception as e:
-                    print(f"  ❌ {api_name} failed: {str(e)}")
-                    results["api_results"][api_name] = {
-                        "error": str(e),
-                        "tools_discovered": 0,
-                        "success": False
-                    }
+            print(f"\n📡 Processing: {api_name}")
+            start_time = time.time()
+            
+            try:
+                # Pass incremental parameters to each API method
+                api_incremental_params = self._prepare_api_incremental_params(api_key, incremental_params)
+                tools = await discovery_func(session, max_tools, api_incremental_params)
+                
+                processing_time = time.time() - start_time
+                
+                results["api_results"][api_name] = {
+                    "tools_discovered": len(tools),
+                    "tools_skipped": 0,
+                    "processing_time": round(processing_time, 2),
+                    "success": True,
+                    "api_type": "real_api_incremental",
+                    "incremental_skip": False
+                }
+                
+                results["total_discovered"] += len(tools)
+                all_tools.extend(tools)
+                
+                print(f"  ✅ {api_name}: {len(tools)} new tools ({processing_time:.1f}s)")
+                
+            except Exception as e:
+                print(f"  ❌ {api_name} failed: {str(e)}")
+                results["api_results"][api_name] = {
+                    "error": str(e),
+                    "tools_discovered": 0,
+                    "tools_skipped": 0,
+                    "success": False,
+                    "incremental_skip": False
+                }
+    
+    # Save tools to database
+    if all_tools:
+        print(f"\n💾 Saving {len(all_tools)} tools to database...")
+        db = SessionLocal()
+        try:
+            save_result = save_discovered_tools_with_deduplication(db, all_tools)
+            results["total_saved"] = save_result.get("saved", 0)
+            results["database_result"] = save_result
+        finally:
+            db.close()
+    
+    results["end_time"] = datetime.utcnow().isoformat()
+    results["successful_apis"] = len([r for r in results["api_results"].values() if r.get("success")])
+    
+    print(f"\n🎊 INCREMENTAL REAL APIs DISCOVERY COMPLETE!")
+    print(f"📈 RESULTS:")
+    print(f"   • Total tools discovered: {results['total_discovered']}")
+    print(f"   • Total tools saved: {results['total_saved']}")
+    print(f"   • Total tools skipped: {results['total_skipped']}")
+    print(f"   • Successful APIs: {results['successful_apis']}")
+    
+    return results
+
+async def discover_no_auth_apis_incremental(self, target_tools: int = 15000, incremental_params: Dict[str, Any] = None) -> Dict[str, Any]:
+    """Enterprise incremental discovery for no-auth APIs"""
+    
+    incremental_params = incremental_params or {}
+    force_full_scan = incremental_params.get("force_full_scan", False)
+    last_check_times = incremental_params.get("last_check_times", {})
+    
+    results = {
+        "discovery_id": f"incremental_no_auth_apis_{int(time.time())}",
+        "start_time": datetime.utcnow().isoformat(),
+        "target_tools": target_tools,
+        "total_discovered": 0,
+        "total_saved": 0,
+        "total_skipped": 0,
+        "api_results": {},
+        "processing_mode": "incremental_no_auth_apis"
+    }
+    
+    print(f"⚡ INCREMENTAL NO-AUTH APIs DISCOVERY")
+    print(f"🎯 Target: {target_tools} tools")
+    print(f"⚡ Mode: {'FULL SCAN' if force_full_scan else 'INCREMENTAL'}")
+    
+    # No-auth API tasks with incremental support
+    no_auth_tasks = [
+        ("GitHub API", "github", self._discover_github_incremental, 3000),
+        ("NPM Registry API", "npm", self._discover_npm_incremental, 3000),
+        ("Reddit API", "reddit", self._discover_reddit_incremental, 2000),
+        ("Hacker News API", "hackernews", self._discover_hackernews_incremental, 2500),
+        ("Stack Overflow API", "stackoverflow", self._discover_stackoverflow_incremental, 3000),
+        ("PyPI JSON API", "pypi", self._discover_pypi_incremental, 2500),
+        ("VS Code Marketplace API", "vscode", self._discover_vscode_incremental, 2000)
+    ]
+    
+    # Filter APIs that need processing
+    ready_apis = []
+    for api_name, api_key, discovery_func, max_tools in no_auth_tasks:
+        last_check = last_check_times.get(api_key)
+        should_skip = self._should_skip_api_incremental(api_key, last_check, force_full_scan)
         
-        # Save all tools to database
-        if all_tools:
-            print(f"\n💾 Saving {len(all_tools)} tools to database...")
+        if should_skip:
+            print(f"⏭️  {api_name}: Skipped (recently checked)")
+            results["api_results"][api_name] = {
+                "tools_discovered": 0,
+                "tools_skipped": max_tools,
+                "processing_time": 0,
+                "success": True,
+                "incremental_skip": True
+            }
+            results["total_skipped"] += max_tools
+        else:
+            ready_apis.append((api_name, api_key, discovery_func, max_tools))
+    
+    if not ready_apis:
+        print("🎯 All no-auth APIs recently checked")
+        results["end_time"] = datetime.utcnow().isoformat()
+        return results
+    
+    # Process APIs
+    async with aiohttp.ClientSession(
+        timeout=aiohttp.ClientTimeout(total=30),
+        headers={'User-Agent': 'AI Tool Discovery System v4.0 - Incremental'}
+    ) as session:
+        
+        all_tools = []
+        
+        for api_name, api_key, discovery_func, max_tools in ready_apis:
+            if len(all_tools) >= target_tools:
+                break
+                
+            print(f"\n📡 Processing: {api_name}")
+            start_time = time.time()
+            
+            try:
+                api_incremental_params = self._prepare_api_incremental_params(api_key, incremental_params)
+                tools = await discovery_func(session, max_tools, api_incremental_params)
+                
+                processing_time = time.time() - start_time
+                all_tools.extend(tools)
+                
+                results["api_results"][api_name] = {
+                    "tools_discovered": len(tools),
+                    "tools_skipped": 0,
+                    "processing_time": round(processing_time, 2),
+                    "success": True,
+                    "incremental_skip": False
+                }
+                
+                print(f"  ✅ {api_name}: {len(tools)} new tools ({processing_time:.1f}s)")
+                
+            except Exception as e:
+                print(f"  ❌ {api_name} failed: {e}")
+                results["api_results"][api_name] = {
+                    "error": str(e),
+                    "tools_discovered": 0,
+                    "success": False,
+                    "incremental_skip": False
+                }
+    
+    results["total_discovered"] = len(all_tools)
+    
+    # Save to database
+    if all_tools:
+        print(f"\n💾 Saving {len(all_tools)} tools to database...")
+        db = SessionLocal()
+        try:
+            save_result = save_discovered_tools_with_deduplication(db, all_tools)
+            results["total_saved"] = save_result.get("saved", 0)
+        finally:
+            db.close()
+    
+    results["end_time"] = datetime.utcnow().isoformat()
+    return results
+
+# ================================================================
+# INDIVIDUAL API INCREMENTAL METHODS
+# ================================================================
+
+async def _discover_single_api_incremental(self, api_name: str, discovery_func, target_tools: int, incremental_params: Dict[str, Any] = None):
+    """Generic wrapper for single API incremental discovery"""
+    
+    incremental_params = incremental_params or {}
+    force_full_scan = incremental_params.get("force_full_scan", False)
+    last_check_times = incremental_params.get("last_check_times", {})
+    
+    # Check if we should skip
+    last_check = last_check_times.get(api_name)
+    should_skip = self._should_skip_api_incremental(api_name, last_check, force_full_scan)
+    
+    if should_skip:
+        return {
+            "success": True,
+            "total_saved": 0,
+            "total_skipped": target_tools,
+            "incremental_skip": True,
+            "last_check": last_check,
+            "processing_time": 0
+        }
+    
+    # Process API
+    start_time = time.time()
+    
+    async with aiohttp.ClientSession(
+        timeout=aiohttp.ClientTimeout(total=30),
+        headers={'User-Agent': 'AI Tool Discovery System v4.0 - Incremental'}
+    ) as session:
+        
+        api_incremental_params = self._prepare_api_incremental_params(api_name, incremental_params)
+        tools = await discovery_func(session, target_tools, api_incremental_params)
+        
+        processing_time = time.time() - start_time
+        
+        # Save to database
+        total_saved = 0
+        if tools:
             db = SessionLocal()
             try:
-                save_result = save_discovered_tools_with_deduplication(db, all_tools)
-                results["total_saved"] = save_result.get("saved", 0)
-                results["total_updated"] = save_result.get("updated", 0)
-                results["database_result"] = save_result
+                save_result = save_discovered_tools_with_deduplication(db, tools)
+                total_saved = save_result.get("saved", 0)
             finally:
                 db.close()
         
-        results["end_time"] = datetime.utcnow().isoformat()
-        results["successful_apis"] = len([r for r in results["api_results"].values() if r.get("success")])
-        
-        print(f"\n🎊 ENHANCED REAL APIs DISCOVERY COMPLETE!")
-        print(f"📈 RESULTS:")
-        print(f"   • Total tools discovered: {results['total_discovered']}")
-        print(f"   • Total tools saved: {results['total_saved']}")
-        print(f"   • Successful APIs: {results['successful_apis']}")
-        
-        return results
-
-    # ================================================================
-    # NEW API DISCOVERY METHODS
-    # ================================================================
-
-    async def _discover_producthunt(self, session: aiohttp.ClientSession, max_tools: int = 4000) -> List[Dict[str, Any]]:
-        """Product Hunt API v2 (GraphQL) - NEW"""
-        
-        tools = []
-        
-        # Get access token first
-        access_token = await self._get_producthunt_token(session)
-        if not access_token:
-            print(f"    ❌ Product Hunt: Could not get access token")
-            return tools
-        
-        print(f"    🎯 Product Hunt: Using GraphQL API v2")
-        
-        # GraphQL queries for different strategies
-        queries = [
-            {
-                "name": "Today's Posts",
-                "query": """
-                    query TodayPosts($first: Int!) {
-                        posts(first: $first) {
-                            edges {
-                                node {
-                                    id name tagline description url website
-                                    votesCount commentsCount featuredAt
-                                    topics { edges { node { name } } }
-                                    thumbnail { url }
-                                }
-                            }
-                        }
-                    }
-                """,
-                "variables": {"first": 20}
-            },
-            {
-                "name": "AI Tools Search",
-                "query": """
-                    query SearchAI($first: Int!) {
-                        posts(first: $first, postedAfter: "{}", order: VOTES_COUNT) {{
-                            edges {{
-                                node {{
-                                    id name tagline description url website
-                                    votesCount commentsCount featuredAt
-                                    topics {{ edges {{ node {{ name }} }} }}
-                                    thumbnail {{ url }}
-                                }}
-                            }}
-                        }}
-                    }}
-                """.format((datetime.utcnow() - timedelta(days=30)).isoformat()),
-                "variables": {"first": 30}
-            }
-        ]
-        
-        headers = {
-            'Authorization': f'Bearer {access_token}',
-            'Content-Type': 'application/json'
+        return {
+            "success": True,
+            "total_saved": total_saved,
+            "total_skipped": 0,
+            "incremental_skip": False,
+            "processing_time": round(processing_time, 2),
+            "tools_discovered": len(tools)
         }
-        
-        for query_info in queries:
-            if len(tools) >= max_tools:
-                break
-                
-            try:
-                await asyncio.sleep(self.apis['producthunt']['rate_limit'])
-                
-                payload = {
-                    "query": query_info["query"],
-                    "variables": query_info["variables"]
-                }
-                
-                async with session.post(self.apis['producthunt']['base_url'], 
-                                      json=payload, headers=headers) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        
-                        if "errors" not in data and "data" in data:
-                            query_tools = self._parse_producthunt_response(data, query_info["name"])
-                            tools.extend(query_tools)
-                            print(f"      ✅ {query_info['name']}: {len(query_tools)} tools")
-                        else:
-                            print(f"      ⚠️ {query_info['name']}: GraphQL errors")
-                    else:
-                        print(f"      ❌ {query_info['name']}: HTTP {response.status}")
-                        
-            except Exception as e:
-                print(f"      ❌ {query_info['name']}: {str(e)}")
-                continue
-        
-        return tools[:max_tools]
 
-    async def _get_producthunt_token(self, session: aiohttp.ClientSession) -> Optional[str]:
-        """Get Product Hunt access token"""
-        
-        # Use existing token if available
-        if self.apis['producthunt']['access_token']:
-            return self.apis['producthunt']['access_token']
-        
-        # Get token via client credentials
-        client_id = self.apis['producthunt']['client_id']
-        client_secret = self.apis['producthunt']['client_secret']
-        
-        if not client_id or not client_secret:
-            return None
-        
+async def _discover_github_incremental(self, session: aiohttp.ClientSession, max_tools: int, incremental_params: Dict[str, Any] = None) -> List[Dict[str, Any]]:
+    """GitHub API with incremental support using 'pushed' parameter"""
+    
+    tools = []
+    incremental_params = incremental_params or {}
+    
+    # Calculate 'since' parameter for incremental updates
+    since_date = self._get_since_date_for_api("github", incremental_params)
+    
+    search_queries = [
+        "ai tool stars:>50", "developer-tools stars:>100", "cli tool stars:>40",
+        "automation tool stars:>60", "productivity stars:>80", "testing tool stars:>30"
+    ]
+    
+    headers = {'User-Agent': 'AI Tool Discovery v4.0 - Incremental'}
+    
+    if self.apis['github']['token']:
+        headers['Authorization'] = f"token {self.apis['github']['token']}"
+    
+    print(f"    🔍 GitHub: Using incremental mode (since: {since_date})")
+    
+    for query in search_queries:
+        if len(tools) >= max_tools:
+            break
+            
         try:
-            data = {
-                "client_id": client_id,
-                "client_secret": client_secret,
-                "grant_type": "client_credentials"
+            await asyncio.sleep(self.apis['github']['rate_limit'])
+            
+            url = f"{self.apis['github']['base_url']}/search/repositories"
+            
+            # Add date filter for incremental
+            incremental_query = f"{query} pushed:>={since_date}"
+            
+            params = {
+                'q': incremental_query,
+                'sort': 'updated',  # Sort by recently updated
+                'order': 'desc',
+                'per_page': 50
             }
             
-            async with session.post(self.apis['producthunt']['oauth_url'], json=data) as response:
-                if response.status == 200:
-                    token_data = await response.json()
-                    return token_data.get("access_token")
-        except Exception:
-            pass
-        
-        return None
-
-    def _parse_producthunt_response(self, data: Dict[str, Any], category: str) -> List[Dict[str, Any]]:
-        """Parse Product Hunt GraphQL response"""
-        
-        tools = []
-        
-        try:
-            posts = data.get("data", {}).get("posts", {})
-            edges = posts.get("edges", [])
-            
-            for edge in edges:
-                node = edge.get("node", {})
-                
-                name = node.get("name", "").strip()
-                if not name or len(name) < 3:
-                    continue
-                
-                # Get website (prefer actual website over PH URL)
-                website = node.get("website", "").strip()
-                if not website:
-                    website = node.get("url", "").strip()
-                
-                # Build description
-                tagline = node.get("tagline", "").strip()
-                description = node.get("description", "").strip()
-                full_description = tagline
-                if description and description != tagline:
-                    full_description = f"{tagline}. {description}"
-                
-                # Extract topics
-                topics = []
-                topic_edges = node.get("topics", {}).get("edges", [])
-                for topic_edge in topic_edges:
-                    topic_name = topic_edge.get("node", {}).get("name")
-                    if topic_name:
-                        topics.append(topic_name)
-                
-                # Build features
-                features = []
-                votes = node.get("votesCount", 0)
-                comments = node.get("commentsCount", 0)
-                if votes > 0:
-                    features.append(f"{votes} votes")
-                if comments > 0:
-                    features.append(f"{comments} comments")
-                if topics:
-                    features.append(f"Topics: {', '.join(topics[:3])}")
-                
-                # Determine tool type
-                tool_type = self._determine_ph_tool_type(topics, full_description)
-                
-                # Calculate confidence
-                confidence = 0.8
-                if votes > 50:
-                    confidence += 0.1
-                if votes > 100:
-                    confidence += 0.1
-                
-                tool = {
-                    "name": name,
-                    "website": website,
-                    "description": full_description[:500],
-                    "tool_type": tool_type,
-                    "category": f"Product Hunt - {category}",
-                    "pricing": "Unknown",
-                    "features": ". ".join(features),
-                    "confidence": min(confidence, 1.0),
-                    "source_data": json.dumps({
-                        "source": "product_hunt_api_v2",
-                        "votes": votes,
-                        "comments": comments,
-                        "topics": topics,
-                        "featured_at": node.get("featuredAt")
-                    })
-                }
-                
-                tools.append(tool)
-                
-        except Exception as e:
-            print(f"      ❌ Error parsing Product Hunt response: {e}")
-        
-        return tools
-
-    def _determine_ph_tool_type(self, topics: List[str], description: str) -> str:
-        """Determine tool type for Product Hunt tools"""
-        
-        topics_lower = [topic.lower() for topic in topics]
-        desc_lower = description.lower()
-        
-        if any(term in topics_lower or term in desc_lower for term in [
-            'artificial-intelligence', 'ai', 'machine-learning', 'automation'
-        ]):
-            return "ai_services"
-        elif any(term in topics_lower or term in desc_lower for term in [
-            'developer-tools', 'programming', 'coding'
-        ]):
-            return "ai_coding_tools"
-        elif any(term in topics_lower or term in desc_lower for term in [
-            'productivity', 'workflow'
-        ]):
-            return "productivity_tools"
-        else:
-            return "web_applications"
-
-    async def _discover_reddit(self, session: aiohttp.ClientSession, max_tools: int = 3000) -> List[Dict[str, Any]]:
-        """Reddit API - NEW"""
-        
-        tools = []
-        
-        print(f"    🔍 Reddit: Searching AI/tool subreddits")
-        
-        # Subreddits to search
-        subreddits = [
-            'artificial',
-            'MachineLearning', 
-            'programming',
-            'webdev',
-            'SideProject',
-            'startups',
-            'Entrepreneur',
-            'productivity'
-        ]
-        
-        for subreddit in subreddits:
-            if len(tools) >= max_tools:
-                break
-                
-            try:
-                await asyncio.sleep(self.apis['reddit']['rate_limit'])
-                
-                # Use Reddit JSON API (no auth required)
-                url = f"{self.apis['reddit']['base_url']}/r/{subreddit}/hot.json"
-                params = {'limit': 25}
-                
-                headers = {'User-Agent': 'AI Tool Discovery Bot 1.0'}
-                
-                async with session.get(url, params=params, headers=headers) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        subreddit_tools = self._parse_reddit_response(data, subreddit)
-                        tools.extend(subreddit_tools)
-                        print(f"      ✅ r/{subreddit}: {len(subreddit_tools)} tools")
-                    else:
-                        print(f"      ❌ r/{subreddit}: HTTP {response.status}")
-                        
-            except Exception as e:
-                print(f"      ❌ r/{subreddit}: {str(e)}")
-                continue
-        
-        return tools[:max_tools]
-
-    def _parse_reddit_response(self, data: Dict[str, Any], subreddit: str) -> List[Dict[str, Any]]:
-        """Parse Reddit API response"""
-        
-        tools = []
-        
-        try:
-            posts = data.get("data", {}).get("children", [])
-            
-            for post in posts:
-                post_data = post.get("data", {})
-                
-                title = post_data.get("title", "").strip()
-                url = post_data.get("url", "").strip()
-                selftext = post_data.get("selftext", "").strip()
-                
-                # Skip if no title or URL
-                if not title or not url or len(title) < 10:
-                    continue
-                
-                # Filter for tool-related posts
-                title_lower = title.lower()
-                tool_keywords = [
-                    'tool', 'app', 'platform', 'service', 'api', 'library',
-                    'framework', 'ai', 'automation', 'generator', 'built',
-                    'created', 'launched', 'released'
-                ]
-                
-                if not any(keyword in title_lower for keyword in tool_keywords):
-                    continue
-                
-                # Skip reddit URLs
-                if 'reddit.com' in url:
-                    continue
-                
-                # Build description
-                description = title
-                if selftext and len(selftext) > 20:
-                    description = f"{title}. {selftext[:200]}"
-                
-                tool = {
-                    "name": title[:100],
-                    "website": url,
-                    "description": description[:500],
-                    "tool_type": "web_applications",
-                    "category": f"Reddit - r/{subreddit}",
-                    "pricing": "Unknown",
-                    "features": f"Reddit score: {post_data.get('score', 0)}",
-                    "confidence": 0.6,
-                    "source_data": json.dumps({
-                        "source": "reddit_api",
-                        "subreddit": subreddit,
-                        "score": post_data.get("score", 0),
-                        "created_utc": post_data.get("created_utc")
-                    })
-                }
-                
-                tools.append(tool)
-                
-        except Exception as e:
-            print(f"      ❌ Error parsing Reddit response: {e}")
-        
-        return tools
-
-    async def _discover_crunchbase(self, session: aiohttp.ClientSession, max_tools: int = 2000) -> List[Dict[str, Any]]:
-        """Crunchbase API - NEW"""
-        
-        tools = []
-        
-        api_key = self.apis['crunchbase']['api_key']
-        if not api_key:
-            print(f"    ❌ Crunchbase: API key not configured")
-            return tools
-        
-        print(f"    🏢 Crunchbase: Searching AI startups")
-        
-        try:
-            # Search for AI-related organizations
-            await asyncio.sleep(self.apis['crunchbase']['rate_limit'])
-            
-            url = f"{self.apis['crunchbase']['base_url']}/searches/organizations"
-            
-            headers = {
-                'X-cb-user-key': api_key,
-                'Content-Type': 'application/json'
-            }
-            
-            # Search for AI companies
-            search_data = {
-                "field_ids": [
-                    "identifier",
-                    "name", 
-                    "short_description",
-                    "website",
-                    "categories",
-                    "funding_total",
-                    "last_funding_at"
-                ],
-                "query": [
-                    {
-                        "type": "predicate",
-                        "field_id": "categories",
-                        "operator_id": "includes",
-                        "values": ["artificial-intelligence", "machine-learning", "automation"]
-                    }
-                ],
-                "limit": min(50, max_tools)
-            }
-            
-            async with session.post(url, json=search_data, headers=headers) as response:
+            async with session.get(url, headers=headers, params=params) as response:
                 if response.status == 200:
                     data = await response.json()
-                    tools = self._parse_crunchbase_response(data)
-                    print(f"      ✅ Crunchbase: {len(tools)} AI companies")
-                else:
-                    print(f"      ❌ Crunchbase: HTTP {response.status}")
                     
-        except Exception as e:
-            print(f"      ❌ Crunchbase: {str(e)}")
-        
-        return tools
-
-    def _parse_crunchbase_response(self, data: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Parse Crunchbase API response"""
-        
-        tools = []
-        
-        try:
-            entities = data.get("entities", [])
-            
-            for entity in entities:
-                properties = entity.get("properties", {})
-                
-                name = properties.get("name", "").strip()
-                website = properties.get("website", {}).get("value", "").strip()
-                description = properties.get("short_description", "").strip()
-                
-                if not name or not website or len(name) < 3:
-                    continue
-                
-                # Get categories
-                categories = []
-                cat_data = properties.get("categories", [])
-                for cat in cat_data:
-                    if isinstance(cat, dict):
-                        cat_name = cat.get("value", "")
-                        if cat_name:
-                            categories.append(cat_name)
-                
-                # Build features
-                features = []
-                funding = properties.get("funding_total", {})
-                if funding and funding.get("value"):
-                    features.append(f"Funding: ${funding['value']:,}")
-                
-                last_funding = properties.get("last_funding_at", {})
-                if last_funding and last_funding.get("value"):
-                    features.append(f"Last funding: {last_funding['value'][:10]}")
-                
-                if categories:
-                    features.append(f"Categories: {', '.join(categories[:3])}")
-                
-                tool = {
-                    "name": name,
-                    "website": website,
-                    "description": description[:500] if description else f"AI startup: {name}",
-                    "tool_type": "ai_services",
-                    "category": "Crunchbase - AI Startups",
-                    "pricing": "Unknown",
-                    "features": ". ".join(features),
-                    "confidence": 0.85,
-                    "source_data": json.dumps({
-                        "source": "crunchbase_api",
-                        "categories": categories,
-                        "funding_total": funding.get("value") if funding else None
-                    })
-                }
-                
-                tools.append(tool)
-                
-        except Exception as e:
-            print(f"      ❌ Error parsing Crunchbase response: {e}")
-        
-        return tools
-
-    # ================================================================
-    # EXISTING API METHODS (keeping your original methods)
-    # ================================================================
-
-    async def _discover_hackernews(self, session: aiohttp.ClientSession, max_tools: int = 2500) -> List[Dict[str, Any]]:
-        """Hacker News Firebase API"""
-        
-        tools = []
-        
-        try:
-            print(f"    🔍 Fetching Hacker News top stories...")
-            
-            url = f"{self.apis['hackernews']['base_url']}/topstories.json"
-            
-            async with session.get(url) as response:
-                if response.status == 200:
-                    story_ids = await response.json()
-                    print(f"    📄 Found {len(story_ids)} top stories")
-                    
-                    for i, story_id in enumerate(story_ids[:50]):  # Process first 50
+                    for repo in data.get('items', []):
                         if len(tools) >= max_tools:
                             break
                             
-                        await asyncio.sleep(self.apis['hackernews']['rate_limit'])
-                        
-                        story_url = f"{self.apis['hackernews']['base_url']}/item/{story_id}.json"
-                        
-                        async with session.get(story_url) as story_response:
-                            if story_response.status == 200:
-                                story = await story_response.json()
-                                tool = self._parse_hackernews_story(story)
-                                if tool:
-                                    tools.append(tool)
-                            
-        except Exception as e:
-            print(f"    ❌ Hacker News error: {e}")
-        
-        return tools
-
-    async def _discover_stackoverflow(self, session: aiohttp.ClientSession, max_tools: int = 4000) -> List[Dict[str, Any]]:
-        """Stack Overflow Questions API"""
-        
-        tools = []
-        tags = ['tools', 'javascript', 'python', 'productivity']
-        
-        for tag in tags:
-            if len(tools) >= max_tools:
-                break
-                
-            try:
-                await asyncio.sleep(self.apis['stackoverflow']['rate_limit'])
-                
-                url = f"{self.apis['stackoverflow']['base_url']}/questions"
-                params = {
-                    'order': 'desc',
-                    'sort': 'votes',
-                    'tagged': tag,
-                    'site': 'stackoverflow',
-                    'pagesize': 50,
-                    'filter': 'withbody'
-                }
-                
-                async with session.get(url, params=params) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        tag_tools = self._parse_stackoverflow_questions(data, tag)
-                        tools.extend(tag_tools)
-                        
-            except Exception as e:
-                continue
-        
-        return tools
-    
-    async def _discover_github(self, session: aiohttp.ClientSession, max_tools: int = 6000) -> List[Dict[str, Any]]:
-        """GitHub Repository Search API"""
-        
-        tools = []
-        
-        search_queries = [
-            "ai tool stars:>50", "developer-tools stars:>100", "cli tool stars:>40",
-            "automation tool stars:>60", "productivity stars:>80", "testing tool stars:>30"
-        ]
-        
-        headers = {'User-Agent': 'AI Tool Discovery v4.0'}
-        
-        if self.apis['github']['token']:
-            headers['Authorization'] = f"token {self.apis['github']['token']}"
-        
-        for query in search_queries:
-            if len(tools) >= max_tools:
-                break
-                
-            try:
-                await asyncio.sleep(self.apis['github']['rate_limit'])
-                
-                url = f"{self.apis['github']['base_url']}/search/repositories"
-                params = {
-                    'q': query,
-                    'sort': 'stars',
-                    'order': 'desc',
-                    'per_page': 100
-                }
-                
-                async with session.get(url, headers=headers, params=params) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        
-                        for repo in data.get('items', []):
-                            if len(tools) >= max_tools:
-                                break
-                                
+                        # Additional filtering for incremental mode
+                        repo_updated = repo.get('updated_at', '')
+                        if self._is_item_recent_enough(repo_updated, since_date):
                             tool = self._parse_github_repo(repo)
                             if tool:
                                 tools.append(tool)
                                 
-                    elif response.status == 403:
-                        await asyncio.sleep(60)
-                        
-            except Exception as e:
-                continue
-        
-        return tools
+                elif response.status == 403:
+                    print(f"    ⚠️ GitHub rate limit hit, waiting...")
+                    await asyncio.sleep(60)
+                    
+        except Exception as e:
+            print(f"    ❌ GitHub query error: {e}")
+            continue
+    
+    print(f"    ✅ GitHub incremental: {len(tools)} updated repositories")
+    return tools
 
-    async def _discover_npm(self, session: aiohttp.ClientSession, max_tools: int = 4000) -> List[Dict[str, Any]]:
-        """NPM Registry Search API"""
-        
-        tools = []
-        
-        keywords = [
-            'cli', 'tool', 'framework', 'library', 'utility', 'build-tool',
-            'developer-tool', 'automation', 'testing', 'productivity'
-        ]
-        
-        for keyword in keywords:
-            if len(tools) >= max_tools:
-                break
-                
-            try:
-                await asyncio.sleep(self.apis['npm']['rate_limit'])
-                
-                url = f"{self.apis['npm']['base_url']}/-/v1/search"
-                params = {
-                    'text': keyword,
-                    'size': 20,
-                    'quality': 0.65,
-                    'popularity': 0.98
-                }
-                
-                async with session.get(url, params=params) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        keyword_tools = self._parse_npm_response(data, keyword)
-                        tools.extend(keyword_tools)
-                        
-            except Exception as e:
-                continue
-        
-        return tools
-
-    async def _discover_pypi(self, session: aiohttp.ClientSession, max_tools: int = 3000) -> List[Dict[str, Any]]:
-        """PyPI JSON API"""
-        
-        tools = []
-        packages = ['click', 'flask', 'fastapi', 'pytest', 'requests', 'django', 'pandas', 'numpy']
-        
-        for package in packages:
-            if len(tools) >= max_tools:
-                break
-                
-            try:
-                await asyncio.sleep(self.apis['pypi']['rate_limit'])
-                
-                url = f"{self.apis['pypi']['base_url']}/pypi/{package}/json"
-                
-                async with session.get(url) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        tool = self._parse_pypi_package(data, package)
-                        if tool:
-                            tools.append(tool)
-                            
-            except Exception as e:
-                continue
-        
-        return tools
-
-    async def _discover_vscode(self, session: aiohttp.ClientSession, max_tools: int = 2000) -> List[Dict[str, Any]]:
-        """VS Code Marketplace API"""
-        
-        tools = []
-        search_terms = ['productivity', 'git', 'python', 'javascript']
-        
-        for term in search_terms:
-            if len(tools) >= max_tools:
-                break
-                
-            try:
-                await asyncio.sleep(self.apis['vscode']['rate_limit'])
-                
-                url = f"{self.apis['vscode']['base_url']}/extensionquery"
-                
-                body = {
-                    "filters": [{
-                        "criteria": [
-                            {"filterType": 8, "value": "Microsoft.VisualStudio.Code"},
-                            {"filterType": 10, "value": term}
-                        ],
-                        "pageSize": 50
-                    }],
-                    "flags": 914
-                }
-                
-                headers = {'Content-Type': 'application/json'}
-                
-                async with session.post(url, json=body, headers=headers) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        term_tools = self._parse_vscode_response(data, term)
-                        tools.extend(term_tools)
-                        
-            except Exception as e:
-                continue
-        
-        return tools
-
-    async def _discover_devto(self, session: aiohttp.ClientSession, max_tools: int = 2000) -> List[Dict[str, Any]]:
-        """Dev.to Articles API"""
-        
-        if not self.apis['devto']['token']:
-            return []
-        
-        tools = []
-        tags = ['tools', 'productivity']
-        
-        for tag in tags:
-            try:
-                await asyncio.sleep(self.apis['devto']['rate_limit'])
-                
-                url = f"{self.apis['devto']['base_url']}/articles"
-                params = {'tag': tag, 'per_page': 20}
-                headers = {'api-key': self.apis['devto']['token']}
-                
-                async with session.get(url, headers=headers, params=params) as response:
-                    if response.status == 200:
-                        articles = await response.json()
-                        tag_tools = self._parse_devto_articles(articles, tag)
-                        tools.extend(tag_tools)
-                        
-            except Exception as e:
-                continue
-        
-        return tools
-
-    async def _discover_stackexchange(self, session: aiohttp.ClientSession, max_tools: int = 3500) -> List[Dict[str, Any]]:
-        """Stack Exchange Network API"""
-        
-        tools = []
-        
+async def _discover_npm_incremental(self, session: aiohttp.ClientSession, max_tools: int, incremental_params: Dict[str, Any] = None) -> List[Dict[str, Any]]:
+    """NPM API with incremental support"""
+    
+    tools = []
+    incremental_params = incremental_params or {}
+    
+    since_date = self._get_since_date_for_api("npm", incremental_params)
+    
+    keywords = [
+        'cli', 'tool', 'framework', 'library', 'utility', 'build-tool',
+        'developer-tool', 'automation', 'testing', 'productivity'
+    ]
+    
+    print(f"    🔍 NPM: Using incremental mode (since: {since_date})")
+    
+    for keyword in keywords:
+        if len(tools) >= max_tools:
+            break
+            
         try:
-            await asyncio.sleep(self.apis['stackexchange']['rate_limit'])
+            await asyncio.sleep(self.apis['npm']['rate_limit'])
             
-            url = f"{self.apis['stackexchange']['base_url']}/questions"
+            url = f"{self.apis['npm']['base_url']}/-/v1/search"
             params = {
-                'order': 'desc',
-                'sort': 'votes',
-                'tagged': 'tools',
-                'site': 'stackoverflow',
-                'pagesize': 25
+                'text': keyword,
+                'size': 20,
+                'quality': 0.65,
+                'popularity': 0.98
             }
-            
-            if self.apis['stackexchange']['key']:
-                params['key'] = self.apis['stackexchange']['key']
             
             async with session.get(url, params=params) as response:
                 if response.status == 200:
                     data = await response.json()
-                    tools = self._parse_stackexchange_questions(data, 'stackoverflow', 'tools')
+                    
+                    for pkg_obj in data.get('objects', []):
+                        package_data = pkg_obj.get('package', {})
+                        
+                        # Check if package was modified since last check
+                        modified_date = package_data.get('date', '')
+                        if self._is_item_recent_enough(modified_date, since_date):
+                            tool = self._parse_npm_package_incremental(package_data, keyword)
+                            if tool:
+                                tools.append(tool)
+                        
+                        if len(tools) >= max_tools:
+                            break
+                            
+        except Exception as e:
+            print(f"    ❌ NPM keyword '{keyword}' error: {e}")
+            continue
+    
+    print(f"    ✅ NPM incremental: {len(tools)} updated packages")
+    return tools
+
+async def _discover_reddit_incremental(self, session: aiohttp.ClientSession, max_tools: int, incremental_params: Dict[str, Any] = None) -> List[Dict[str, Any]]:
+    """Reddit API with incremental support using created_utc"""
+    
+    tools = []
+    incremental_params = incremental_params or {}
+    
+    since_timestamp = self._get_since_timestamp_for_api("reddit", incremental_params)
+    
+    subreddits = [
+        'artificial', 'MachineLearning', 'programming', 'webdev',
+        'SideProject', 'startups', 'Entrepreneur', 'productivity'
+    ]
+    
+    print(f"    🔍 Reddit: Using incremental mode (since: {datetime.fromtimestamp(since_timestamp)})")
+    
+    for subreddit in subreddits:
+        if len(tools) >= max_tools:
+            break
+            
+        try:
+            await asyncio.sleep(self.apis['reddit']['rate_limit'])
+            
+            url = f"{self.apis['reddit']['base_url']}/r/{subreddit}/new.json"  # Use 'new' for incremental
+            params = {'limit': 25}
+            headers = {'User-Agent': 'AI Tool Discovery Bot 1.0 - Incremental'}
+            
+            async with session.get(url, params=params, headers=headers) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    
+                    for post in data.get("data", {}).get("children", []):
+                        post_data = post.get("data", {})
+                        created_utc = post_data.get("created_utc", 0)
+                        
+                        # Only process posts created after last check
+                        if created_utc > since_timestamp:
+                            tool = self._parse_reddit_post_incremental(post_data, subreddit)
+                            if tool:
+                                tools.append(tool)
+                        
+                        if len(tools) >= max_tools:
+                            break
+                            
+        except Exception as e:
+            print(f"    ❌ Reddit r/{subreddit} error: {e}")
+            continue
+    
+    print(f"    ✅ Reddit incremental: {len(tools)} new posts")
+    return tools
+
+async def _discover_hackernews_incremental(self, session: aiohttp.ClientSession, max_tools: int, incremental_params: Dict[str, Any] = None) -> List[Dict[str, Any]]:
+    """Hacker News API with incremental support"""
+    
+    tools = []
+    incremental_params = incremental_params or {}
+    
+    since_timestamp = self._get_since_timestamp_for_api("hackernews", incremental_params)
+    
+    try:
+        print(f"    🔍 Hacker News: Using incremental mode (since: {datetime.fromtimestamp(since_timestamp)})")
+        
+        # Get new stories instead of top stories for incremental
+        url = f"{self.apis['hackernews']['base_url']}/newstories.json"
+        
+        async with session.get(url) as response:
+            if response.status == 200:
+                story_ids = await response.json()
+                
+                for story_id in story_ids[:100]:  # Check more recent stories
+                    if len(tools) >= max_tools:
+                        break
+                        
+                    await asyncio.sleep(self.apis['hackernews']['rate_limit'])
+                    
+                    story_url = f"{self.apis['hackernews']['base_url']}/item/{story_id}.json"
+                    
+                    async with session.get(story_url) as story_response:
+                        if story_response.status == 200:
+                            story = await story_response.json()
+                            story_time = story.get('time', 0)
+                            
+                            # Only process stories newer than last check
+                            if story_time > since_timestamp:
+                                tool = self._parse_hackernews_story(story)
+                                if tool:
+                                    tools.append(tool)
+                            
+    except Exception as e:
+        print(f"    ❌ Hacker News incremental error: {e}")
+    
+    print(f"    ✅ Hacker News incremental: {len(tools)} new stories")
+    return tools
+
+async def _discover_producthunt_incremental(self, session: aiohttp.ClientSession, max_tools: int, incremental_params: Dict[str, Any] = None) -> List[Dict[str, Any]]:
+    """Product Hunt API with incremental support"""
+    
+    tools = []
+    incremental_params = incremental_params or {}
+    
+    since_date = self._get_since_date_for_api("producthunt", incremental_params)
+    
+    access_token = await self._get_producthunt_token(session)
+    if not access_token:
+        print(f"    ❌ Product Hunt: Could not get access token")
+        return tools
+    
+    print(f"    🔍 Product Hunt: Using incremental mode (since: {since_date})")
+    
+    # GraphQL query with date filtering for incremental
+    query = f"""
+        query IncrementalPosts($first: Int!, $postedAfter: DateTime!) {{
+            posts(first: $first, postedAfter: $postedAfter, order: NEWEST) {{
+                edges {{
+                    node {{
+                        id name tagline description url website
+                        votesCount commentsCount featuredAt
+                        topics {{ edges {{ node {{ name }} }} }}
+                    }}
+                }}
+            }}
+        }}
+    """
+    
+    headers = {
+        'Authorization': f'Bearer {access_token}',
+        'Content-Type': 'application/json'
+    }
+    
+    try:
+        payload = {
+            "query": query,
+            "variables": {
+                "first": max_tools,
+                "postedAfter": since_date
+            }
+        }
+        
+        async with session.post(self.apis['producthunt']['base_url'], 
+                              json=payload, headers=headers) as response:
+            if response.status == 200:
+                data = await response.json()
+                
+                if "errors" not in data and "data" in data:
+                    tools = self._parse_producthunt_response(data, "Incremental")
+                    print(f"    ✅ Product Hunt incremental: {len(tools)} new posts")
+                else:
+                    print(f"    ⚠️ Product Hunt: GraphQL errors in incremental query")
+            else:
+                print(f"    ❌ Product Hunt incremental: HTTP {response.status}")
+                
+    except Exception as e:
+        print(f"    ❌ Product Hunt incremental error: {e}")
+    
+    return tools
+
+async def _discover_crunchbase_incremental(self, session: aiohttp.ClientSession, max_tools: int, incremental_params: Dict[str, Any] = None) -> List[Dict[str, Any]]:
+    """Crunchbase API with incremental support"""
+    
+    tools = []
+    incremental_params = incremental_params or {}
+    
+    api_key = self.apis['crunchbase']['api_key']
+    if not api_key:
+        return tools
+    
+    since_date = self._get_since_date_for_api("crunchbase", incremental_params)
+    
+    print(f"    🔍 Crunchbase: Using incremental mode (since: {since_date})")
+    
+    try:
+        url = f"{self.apis['crunchbase']['base_url']}/searches/organizations"
+        
+        headers = {
+            'X-cb-user-key': api_key,
+            'Content-Type': 'application/json'
+        }
+        
+        # Search with date filtering for incremental
+        search_data = {
+            "field_ids": [
+                "identifier", "name", "short_description", "website",
+                "categories", "funding_total", "last_funding_at", "updated_at"
+            ],
+            "query": [
+                {
+                    "type": "predicate",
+                    "field_id": "categories",
+                    "operator_id": "includes",
+                    "values": ["artificial-intelligence", "machine-learning", "automation"]
+                },
+                {
+                    "type": "predicate",
+                    "field_id": "updated_at",
+                    "operator_id": "gte",
+                    "values": [since_date]
+                }
+            ],
+            "limit": min(50, max_tools)
+        }
+        
+        await asyncio.sleep(self.apis['crunchbase']['rate_limit'])
+        
+        async with session.post(url, json=search_data, headers=headers) as response:
+            if response.status == 200:
+                data = await response.json()
+                tools = self._parse_crunchbase_response(data)
+                print(f"    ✅ Crunchbase incremental: {len(tools)} updated companies")
+            else:
+                print(f"    ❌ Crunchbase incremental: HTTP {response.status}")
+                
+    except Exception as e:
+        print(f"    ❌ Crunchbase incremental error: {e}")
+    
+    return tools
+
+async def _discover_stackoverflow_incremental(self, session: aiohttp.ClientSession, max_tools: int, incremental_params: Dict[str, Any] = None) -> List[Dict[str, Any]]:
+    """Stack Overflow API with incremental support using fromdate"""
+    
+    tools = []
+    incremental_params = incremental_params or {}
+    
+    since_timestamp = self._get_since_timestamp_for_api("stackoverflow", incremental_params)
+    tags = ['tools', 'javascript', 'python', 'productivity']
+    
+    print(f"    🔍 Stack Overflow: Using incremental mode (since: {datetime.fromtimestamp(since_timestamp)})")
+    
+    for tag in tags:
+        if len(tools) >= max_tools:
+            break
+            
+        try:
+            await asyncio.sleep(self.apis['stackoverflow']['rate_limit'])
+            
+            url = f"{self.apis['stackoverflow']['base_url']}/questions"
+            params = {
+                'order': 'desc',
+                'sort': 'activity',  # Sort by recent activity
+                'tagged': tag,
+                'site': 'stackoverflow',
+                'pagesize': 50,
+                'filter': 'withbody',
+                'fromdate': int(since_timestamp)  # Incremental parameter
+            }
+            
+            async with session.get(url, params=params) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    tag_tools = self._parse_stackoverflow_questions(data, tag)
+                    tools.extend(tag_tools)
                     
         except Exception as e:
-            pass
-        
-        return tools
+            print(f"    ❌ Stack Overflow tag '{tag}' error: {e}")
+            continue
+    
+    print(f"    ✅ Stack Overflow incremental: {len(tools)} recent questions")
+    return tools
 
-    # ================================================================
-    # HELPER METHODS
-    # ================================================================
+async def _discover_pypi_incremental(self, session: aiohttp.ClientSession, max_tools: int, incremental_params: Dict[str, Any] = None) -> List[Dict[str, Any]]:
+    """PyPI API with incremental support (simplified - PyPI has limited incremental options)"""
+    
+    tools = []
+    incremental_params = incremental_params or {}
+    
+    # PyPI doesn't have great incremental support, so we'll use a different strategy
+    # Focus on recently updated popular packages
+    since_date = self._get_since_date_for_api("pypi", incremental_params)
+    
+    print(f"    🔍 PyPI: Using incremental mode (limited API support)")
+    
+    # Get popular packages that might have been updated
+    popular_packages = [
+        'requests', 'flask', 'django', 'fastapi', 'pandas', 'numpy',
+        'click', 'pytest', 'black', 'mypy', 'asyncio', 'aiohttp'
+    ]
+    
+    for package in popular_packages[:max_tools]:
+        try:
+            await asyncio.sleep(self.apis['pypi']['rate_limit'])
+            
+            url = f"{self.apis['pypi']['base_url']}/pypi/{package}/json"
+            
+            async with session.get(url) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    
+                    # Check if package was updated since last check
+                    release_date = self._get_pypi_latest_release_date(data)
+                    if self._is_item_recent_enough(release_date, since_date):
+                        tool = self._parse_pypi_package(data, package)
+                        if tool:
+                            tools.append(tool)
+                            
+        except Exception as e:
+            continue
+    
+    print(f"    ✅ PyPI incremental: {len(tools)} updated packages")
+    return tools
 
-    def _is_api_ready(self, api_key: str) -> bool:
-        """Check if API is configured and ready"""
-        
-        always_ready = ['hackernews', 'stackoverflow', 'npm', 'pypi', 'vscode', 'github', 'stackexchange', 'reddit']
-        needs_token = {
-            'devto': 'DEV_TO_TOKEN',
-            'producthunt': 'PRODUCT_HUNT_CLIENT_ID',
-            'crunchbase': 'CRUNCHBASE_API_KEY'
-        }
-        
-        if api_key in always_ready:
-            return True
-        elif api_key in needs_token:
-            env_var = needs_token[api_key]
-            return bool(os.getenv(env_var))
-        
+async def _discover_vscode_incremental(self, session: aiohttp.ClientSession, max_tools: int, incremental_params: Dict[str, Any] = None) -> List[Dict[str, Any]]:
+    """VS Code Marketplace API with incremental support"""
+    
+    tools = []
+    incremental_params = incremental_params or {}
+    
+    # VS Code marketplace doesn't have direct date filtering, so we'll sort by update date
+    search_terms = ['productivity', 'git', 'python', 'javascript']
+    
+    print(f"    🔍 VS Code: Using incremental mode (sort by recent updates)")
+    
+    for term in search_terms:
+        if len(tools) >= max_tools:
+            break
+            
+        try:
+            await asyncio.sleep(self.apis['vscode']['rate_limit'])
+            
+            url = f"{self.apis['vscode']['base_url']}/extensionquery"
+            
+            body = {
+                "filters": [{
+                    "criteria": [
+                        {"filterType": 8, "value": "Microsoft.VisualStudio.Code"},
+                        {"filterType": 10, "value": term}
+                    ],
+                    "pageSize": 30,
+                    "sortBy": 4,  # Sort by update date
+                    "sortOrder": 1  # Descending
+                }],
+                "flags": 914
+            }
+            
+            headers = {'Content-Type': 'application/json'}
+            
+            async with session.post(url, json=body, headers=headers) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    term_tools = self._parse_vscode_response(data, term)
+                    tools.extend(term_tools[:10])  # Limit per term for incremental
+                    
+        except Exception as e:
+            continue
+    
+    print(f"    ✅ VS Code incremental: {len(tools)} recently updated extensions")
+    return tools
+
+# ================================================================
+# INCREMENTAL HELPER METHODS
+# ================================================================
+
+def _should_skip_api_incremental(self, api_name: str, last_check: str, force_full_scan: bool) -> bool:
+    """Determine if an API should be skipped in incremental mode"""
+    
+    if force_full_scan:
         return False
-
-    # ================================================================
-    # PARSING METHODS (keeping your existing ones + new ones)
-    # ================================================================
-
-    def _parse_hackernews_story(self, story: dict) -> Optional[Dict[str, Any]]:
-        """Parse HN story"""
-        try:
-            title = story.get('title', '')
-            url = story.get('url', '')
-            
-            tool_keywords = ['tool', 'app', 'service', 'show hn', 'launch']
-            
-            if any(k in title.lower() for k in tool_keywords) and url:
-                return {
-                    "name": title[:100],
-                    "website": url,
-                    "description": f"Hacker News: {title}",
-                    "tool_type": "ai_services",
-                    "category": "Hacker News",
-                    "pricing": "Unknown",
-                    "features": f"HN Score: {story.get('score', 0)}",
-                    "confidence": 0.9,
-                    "source_data": json.dumps({
-                        "source": "hackernews_api",
-                        "score": story.get('score', 0)
-                    })
-                }
-        except:
-            pass
-        return None
-
-    def _parse_stackoverflow_questions(self, data: dict, tag: str) -> List[Dict[str, Any]]:
-        """Parse SO questions"""
-        tools = []
-        
-        for question in data.get('items', []):
-            title = question.get('title', '')
-            
-            if any(k in title.lower() for k in ['tool', 'best', 'recommend']):
-                tools.append({
-                    "name": title[:100],
-                    "website": question.get('link', ''),
-                    "description": f"SO discussion: {title[:150]}",
-                    "tool_type": "ai_coding_tools",
-                    "category": f"Stack Overflow {tag}",
-                    "pricing": "Discussion",
-                    "features": f"SO Score: {question.get('score', 0)}",
-                    "confidence": 0.7,
-                    "source_data": json.dumps({
-                        "source": "stackoverflow_api",
-                        "tag": tag
-                    })
-                })
-        
-        return tools
-
-    def _parse_github_repo(self, repo: dict) -> Optional[Dict[str, Any]]:
-        """Parse GitHub repo"""
-        try:
-            return {
-                "name": repo['name'],
-                "website": repo['html_url'],
-                "description": repo.get('description', ''),
-                "tool_type": "ai_services",
-                "category": "Open Source",
-                "pricing": "Open Source",
-                "features": f"Stars: {repo['stargazers_count']}",
-                "confidence": 0.8,
-                "source_data": json.dumps({
-                    "source": "github_api",
-                    "stars": repo['stargazers_count']
-                })
-            }
-        except:
-            pass
-        return None
-
-    def _parse_npm_response(self, data: dict, keyword: str) -> List[Dict[str, Any]]:
-        """Parse NPM response"""
-        tools = []
-        
-        for pkg in data.get('objects', []):
-            package_data = pkg.get('package', {})
-            name = package_data.get('name', '')
-            
-            if name:
-                tools.append({
-                    "name": name,
-                    "website": f"https://www.npmjs.com/package/{name}",
-                    "description": package_data.get('description', ''),
-                    "tool_type": "web_applications",
-                    "category": "NPM Package",
-                    "pricing": "Open Source",
-                    "features": f"NPM, {keyword}",
-                    "confidence": 0.75,
-                    "source_data": json.dumps({
-                        "source": "npm_api",
-                        "keyword": keyword
-                    })
-                })
-        
-        return tools
-
-    def _parse_pypi_package(self, data: dict, package: str) -> Optional[Dict[str, Any]]:
-        """Parse PyPI package"""
-        try:
-            info = data.get('info', {})
-            
-            return {
-                "name": info.get('name', package),
-                "website": f"https://pypi.org/project/{package}/",
-                "description": info.get('summary', ''),
-                "tool_type": "ai_coding_tools",
-                "category": "Python Package",
-                "pricing": "Open Source",
-                "features": f"Python, v{info.get('version', '')}",
-                "confidence": 0.8,
-                "source_data": json.dumps({
-                    "source": "pypi_json_api",
-                    "version": info.get('version', '')
-                })
-            }
-        except:
-            pass
-        return None
-
-    def _parse_vscode_response(self, data: dict, term: str) -> List[Dict[str, Any]]:
-        """Parse VS Code response"""
-        tools = []
-        
-        try:
-            extensions = data.get('results', [{}])[0].get('extensions', [])
-            
-            for ext in extensions:
-                name = ext.get('displayName', '')
-                if name:
-                    tools.append({
-                        "name": f"{name} (VS Code)",
-                        "website": f"https://marketplace.visualstudio.com/items?itemName={ext.get('extensionName', '')}",
-                        "description": ext.get('shortDescription', ''),
-                        "tool_type": "code_editors",
-                        "category": "VS Code Extension",
-                        "pricing": "Free",
-                        "features": f"VS Code, {term}",
-                        "confidence": 0.85,
-                        "source_data": json.dumps({
-                            "source": "vscode_api",
-                            "term": term
-                        })
-                    })
-        except:
-            pass
-        
-        return tools
-
-    def _parse_devto_articles(self, articles: List[dict], tag: str) -> List[Dict[str, Any]]:
-        """Parse Dev.to articles"""
-        tools = []
-        
-        for article in articles:
-            title = article.get('title', '')
-            
-            if any(k in title.lower() for k in ['tool', 'best', 'guide']):
-                tools.append({
-                    "name": title[:100],
-                    "website": article.get('url', ''),
-                    "description": article.get('description', ''),
-                    "tool_type": "ai_coding_tools",
-                    "category": f"Dev.to {tag}",
-                    "pricing": "Article",
-                    "features": f"Dev.to, {article.get('positive_reactions_count', 0)} reactions",
-                    "confidence": 0.75,
-                    "source_data": json.dumps({
-                        "source": "devto_api",
-                        "tag": tag
-                    })
-                })
-        
-        return tools
-
-    def _parse_stackexchange_questions(self, data: dict, site: str, tag: str) -> List[Dict[str, Any]]:
-        """Parse Stack Exchange questions"""
-        tools = []
-        
-        for question in data.get('items', []):
-            title = question.get('title', '')
-            
-            if any(k in title.lower() for k in ['tool', 'software', 'recommend']):
-                tools.append({
-                    "name": title[:100],
-                    "website": question.get('link', ''),
-                    "description": f"{site} discussion: {title[:150]}",
-                    "tool_type": "productivity_tools",
-                    "category": f"{site.title()} {tag}",
-                    "pricing": "Discussion",
-                    "features": f"Score: {question.get('score', 0)}",
-                    "confidence": 0.7,
-                    "source_data": json.dumps({
-                        "source": "stackexchange_api",
-                        "site": site,
-                        "tag": tag
-                    })
-                })
-        
-        return tools
-
-    # ================================================================
-    # SYNC WRAPPERS FOR FASTAPI - INCLUDING NEW APIS
-    # ================================================================
-
-    def run_sync_discover_all_real_apis(self, target_tools: int = 30000) -> Dict[str, Any]:
-        """Sync wrapper for all real APIs discovery including new ones"""
-        return asyncio.run(self.discover_all_real_apis(target_tools))
     
-    def run_sync_discover_no_auth_apis(self, target_tools: int = 15000) -> Dict[str, Any]:
-        """Sync wrapper for no-auth APIs discovery"""
-        return asyncio.run(self.discover_no_auth_apis(target_tools))
+    if not last_check:
+        return False  # First time, don't skip
     
-    def run_sync_discover_producthunt(self, target_tools: int = 4000) -> Dict[str, Any]:
-        """Sync wrapper for Product Hunt only"""
-        async def _run():
-            results = {
-                "start_time": datetime.utcnow().isoformat(),
-                "total_saved": 0
-            }
-            
-            async with aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=30),
-                headers={'User-Agent': 'AI Tool Discovery System v4.0'}
-            ) as session:
-                tools = await self._discover_producthunt(session, target_tools)
-                
-                if tools:
-                    db = SessionLocal()
-                    try:
-                        save_result = save_discovered_tools_with_deduplication(db, tools)
-                        results["total_saved"] = save_result.get("saved", 0)
-                    finally:
-                        db.close()
-            
-            results["end_time"] = datetime.utcnow().isoformat()
-            return results
+    try:
+        last_check_dt = datetime.fromisoformat(last_check)
+        hours_since = (datetime.utcnow() - last_check_dt).total_seconds() / 3600
         
-        return asyncio.run(_run())
-    
-    def run_sync_discover_reddit(self, target_tools: int = 3000) -> Dict[str, Any]:
-        """Sync wrapper for Reddit only"""
-        async def _run():
-            results = {
-                "start_time": datetime.utcnow().isoformat(),
-                "total_saved": 0
-            }
-            
-            async with aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=30),
-                headers={'User-Agent': 'AI Tool Discovery System v4.0'}
-            ) as session:
-                tools = await self._discover_reddit(session, target_tools)
-                
-                if tools:
-                    db = SessionLocal()
-                    try:
-                        save_result = save_discovered_tools_with_deduplication(db, tools)
-                        results["total_saved"] = save_result.get("saved", 0)
-                    finally:
-                        db.close()
-            
-            results["end_time"] = datetime.utcnow().isoformat()
-            return results
-        
-        return asyncio.run(_run())
-    
-    def run_sync_discover_crunchbase(self, target_tools: int = 2000) -> Dict[str, Any]:
-        """Sync wrapper for Crunchbase only"""
-        async def _run():
-            results = {
-                "start_time": datetime.utcnow().isoformat(),
-                "total_saved": 0
-            }
-            
-            async with aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=30),
-                headers={'User-Agent': 'AI Tool Discovery System v4.0'}
-            ) as session:
-                tools = await self._discover_crunchbase(session, target_tools)
-                
-                if tools:
-                    db = SessionLocal()
-                    try:
-                        save_result = save_discovered_tools_with_deduplication(db, tools)
-                        results["total_saved"] = save_result.get("saved", 0)
-                    finally:
-                        db.close()
-            
-            results["end_time"] = datetime.utcnow().isoformat()
-            return results
-        
-        return asyncio.run(_run())
-
-    # Keep your existing sync wrappers
-    def run_sync_discover_hackernews(self, target_tools: int = 2500) -> Dict[str, Any]:
-        """Sync wrapper for Hacker News only"""
-        async def _run():
-            results = {
-                "start_time": datetime.utcnow().isoformat(),
-                "total_saved": 0
-            }
-            
-            async with aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=30),
-                headers={'User-Agent': 'AI Tool Discovery System v4.0'}
-            ) as session:
-                tools = await self._discover_hackernews(session, target_tools)
-                
-                if tools:
-                    db = SessionLocal()
-                    try:
-                        save_result = save_discovered_tools_with_deduplication(db, tools)
-                        results["total_saved"] = save_result.get("saved", 0)
-                    finally:
-                        db.close()
-            
-            results["end_time"] = datetime.utcnow().isoformat()
-            return results
-        
-        return asyncio.run(_run())
-
-    def run_sync_discover_github(self, target_tools: int = 6000) -> Dict[str, Any]:
-        """Sync wrapper for GitHub only"""
-        async def _run():
-            results = {
-                "start_time": datetime.utcnow().isoformat(),
-                "total_saved": 0
-            }
-            
-            async with aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=30),
-                headers={'User-Agent': 'AI Tool Discovery System v4.0'}
-            ) as session:
-                tools = await self._discover_github(session, target_tools)
-                
-                if tools:
-                    db = SessionLocal()
-                    try:
-                        save_result = save_discovered_tools_with_deduplication(db, tools)
-                        results["total_saved"] = save_result.get("saved", 0)
-                    finally:
-                        db.close()
-            
-            results["end_time"] = datetime.utcnow().isoformat()
-            return results
-        
-        return asyncio.run(_run())
-
-    def run_sync_discover_npm(self, target_tools: int = 4000) -> Dict[str, Any]:
-        """Sync wrapper for NPM only"""
-        async def _run():
-            results = {
-                "start_time": datetime.utcnow().isoformat(),
-                "total_saved": 0
-            }
-            
-            async with aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=30),
-                headers={'User-Agent': 'AI Tool Discovery System v4.0'}
-            ) as session:
-                tools = await self._discover_npm(session, target_tools)
-                
-                if tools:
-                    db = SessionLocal()
-                    try:
-                        save_result = save_discovered_tools_with_deduplication(db, tools)
-                        results["total_saved"] = save_result.get("saved", 0)
-                    finally:
-                        db.close()
-            
-            results["end_time"] = datetime.utcnow().isoformat()
-            return results
-        
-        return asyncio.run(_run())
-
-    def run_sync_discover_pypi(self, target_tools: int = 3000) -> Dict[str, Any]:
-        """Sync wrapper for PyPI only"""
-        async def _run():
-            results = {
-                "start_time": datetime.utcnow().isoformat(),
-                "total_saved": 0
-            }
-            
-            async with aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=30),
-                headers={'User-Agent': 'AI Tool Discovery System v4.0'}
-            ) as session:
-                tools = await self._discover_pypi(session, target_tools)
-                
-                if tools:
-                    db = SessionLocal()
-                    try:
-                        save_result = save_discovered_tools_with_deduplication(db, tools)
-                        results["total_saved"] = save_result.get("saved", 0)
-                    finally:
-                        db.close()
-            
-            results["end_time"] = datetime.utcnow().isoformat()
-            return results
-        
-        return asyncio.run(_run())
-
-    async def discover_no_auth_apis(self, target_tools: int = 15000) -> Dict[str, Any]:
-        """Discover from APIs that need NO authentication - ENHANCED"""
-        
-        results = {
-            "discovery_id": f"no_auth_apis_{int(time.time())}",
-            "start_time": datetime.utcnow().isoformat(),
-            "target_tools": target_tools,
-            "total_saved": 0
+        # API-specific skip thresholds
+        skip_thresholds = {
+            "github": 2,         # Check every 2 hours (active development)
+            "npm": 4,           # Check every 4 hours (frequent updates)
+            "reddit": 1,        # Check every hour (very active)
+            "hackernews": 2,    # Check every 2 hours (active)
+            "stackoverflow": 6, # Check every 6 hours (less frequent)
+            "producthunt": 24,  # Check daily (new products daily)
+            "crunchbase": 24,   # Check daily (business data)
+            "pypi": 12,         # Check every 12 hours
+            "vscode": 12        # Check every 12 hours
         }
         
-        print(f"⚡ ENHANCED NO-AUTH APIs DISCOVERY")
-        print(f"🎯 Target: {target_tools} tools")
+        threshold = skip_thresholds.get(api_name, 6)  # Default 6 hours
+        return hours_since < threshold
         
-        # APIs that work immediately (including Reddit)
-        no_auth_tasks = [
-            ("Hacker News", self._discover_hackernews, 2500),
-            ("Stack Overflow", self._discover_stackoverflow, 3000),
-            ("NPM Registry", self._discover_npm, 3000),
-            ("PyPI JSON", self._discover_pypi, 2500),
-            ("VS Code Marketplace", self._discover_vscode, 2000),
-            ("Reddit", self._discover_reddit, 2000)  # NEW - No auth required
-        ]
-        
-        async with aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=30),
-            headers={'User-Agent': 'AI Tool Discovery System v4.0'}
-        ) as session:
-            
-            all_tools = []
-            
-            for api_name, discovery_func, max_tools in no_auth_tasks:
-                if len(all_tools) >= target_tools:
-                    break
-                    
-                print(f"\n📡 Processing: {api_name}")
-                
-                try:
-                    tools = await discovery_func(session, max_tools)
-                    all_tools.extend(tools)
-                    print(f"  ✅ {api_name}: {len(tools)} tools")
-                    
-                except Exception as e:
-                    print(f"  ❌ {api_name} failed: {e}")
-        
-        # Save to database
-        if all_tools:
-            db = SessionLocal()
-            try:
-                save_result = save_discovered_tools_with_deduplication(db, all_tools)
-                results["total_saved"] = save_result.get("saved", 0)
-            finally:
-                db.close()
-        
-        results["end_time"] = datetime.utcnow().isoformat()
-        return results
+    except Exception:
+        return False  # If error parsing date, don't skip
 
-# Global instance
-unified_apis_service = UnifiedRealAPIsService()
+def _prepare_api_incremental_params(self, api_name: str, incremental_params: Dict[str, Any]) -> Dict[str, Any]:
+    """Prepare API-specific incremental parameters"""
+    
+    api_params = {
+        "api_name": api_name,
+        "force_full_scan": incremental_params.get("force_full_scan", False),
+        "incremental_mode": incremental_params.get("incremental_mode", True)
+    }
+    
+    # Add last check time for this specific API
+    last_check_times = incremental_params.get("last_check_times", {})
+    if api_name in last_check_times:
+        api_params["last_check"] = last_check_times[api_name]
+    
+    return api_params
+
+def _get_since_date_for_api(self, api_name: str, incremental_params: Dict[str, Any]) -> str:
+    """Get 'since' date for API incremental queries (ISO format)"""
+    
+    last_check_times = incremental_params.get("last_check_times", {})
+    last_check = last_check_times.get(api_name)
+    
+    if last_check:
+        try:
+            # Use last check time
+            return datetime.fromisoformat(last_check).isoformat()
+        except:
+            pass
+    
+    # Default fallback - last 24 hours
+    default_since = datetime.utcnow() - timedelta(days=1)
+    return default_since.isoformat()
+
+def _get_since_timestamp_for_api(self, api_name: str, incremental_params: Dict[str, Any]) -> int:
+    """Get 'since' timestamp for API incremental queries (Unix timestamp)"""
+    
+    last_check_times = incremental_params.get("last_check_times", {})
+    last_check = last_check_times.get(api_name)
+    
+    if last_check:
+        try:
+            # Use last check time
+            return int(datetime.fromisoformat(last_check).timestamp())
+        except:
+            pass
+    
+    # Default fallback - last 24 hours
+    default_since = datetime.utcnow() - timedelta(days=1)
+    return int(default_since.timestamp())
+
+def _is_item_recent_enough(self, item_date: str, since_date: str) -> bool:
+    """Check if an item is recent enough for incremental processing"""
+    
+    if not item_date or not since_date:
+        return True  # Include if we can't determine
+    
+    try:
+        item_dt = datetime.fromisoformat(item_date.replace('Z', '+00:00'))
+        since_dt = datetime.fromisoformat(since_date.replace('Z', '+00:00'))
+        return item_dt > since_dt
+    except Exception:
+        return True  # Include if error parsing dates
+
+def _get_pypi_latest_release_date(self, package_data: Dict[str, Any]) -> str:
+    """Extract latest release date from PyPI package data"""
+    
+    try:
+        releases = package_data.get("releases", {})
+        if not releases:
+            return ""
+        
+        # Get the latest version
+        info = package_data.get("info", {})
+        latest_version = info.get("version", "")
+        
+        if latest_version and latest_version in releases:
+            release_files = releases[latest_version]
+            if release_files:
+                # Get upload time of first file
+                return release_files[0].get("upload_time_iso_8601", "")
+        
+        return ""
+    except Exception:
+        return ""
+
+def _parse_npm_package_incremental(self, package_data: Dict[str, Any], keyword: str) -> Optional[Dict[str, Any]]:
+    """Parse NPM package with incremental-specific handling"""
+    
+    name = package_data.get('name', '')
+    if not name:
+        return None
+    
+    return {
+        "name": name,
+        "website": f"https://www.npmjs.com/package/{name}",
+        "description": package_data.get('description', ''),
+        "tool_type": "web_applications",
+        "category": "NPM Package",
+        "pricing": "Open Source",
+        "features": f"NPM, {keyword}, Updated recently",
+        "confidence": 0.75,
+        "source_data": json.dumps({
+            "source": "npm_api_incremental",
+            "keyword": keyword,
+            "modified_date": package_data.get('date', '')
+        })
+    }
+
+def _parse_reddit_post_incremental(self, post_data: Dict[str, Any], subreddit: str) -> Optional[Dict[str, Any]]:
+    """Parse Reddit post with incremental-specific handling"""
+    
+    title = post_data.get("title", "").strip()
+    url = post_data.get("url", "").strip()
+    selftext = post_data.get("selftext", "").strip()
+    
+    # Skip if no title or URL
+    if not title or not url or len(title) < 10:
+        return None
+    
+    # Filter for tool-related posts
+    title_lower = title.lower()
+    tool_keywords = [
+        'tool', 'app', 'platform', 'service', 'api', 'library',
+        'framework', 'ai', 'automation', 'generator', 'built',
+        'created', 'launched', 'released', 'new'
+    ]
+    
+    if not any(keyword in title_lower for keyword in tool_keywords):
+        return None
+    
+    # Skip reddit URLs
+    if 'reddit.com' in url:
+        return None
+    
+    # Build description
+    description = title
+    if selftext and len(selftext) > 20:
+        description = f"{title}. {selftext[:200]}"
+    
+    return {
+        "name": title[:100],
+        "website": url,
+        "description": description[:500],
+        "tool_type": "web_applications",
+        "category": f"Reddit - r/{subreddit}",
+        "pricing": "Unknown",
+        "features": f"Reddit score: {post_data.get('score', 0)}, Recent post",
+        "confidence": 0.65,
+        "source_data": json.dumps({
+            "source": "reddit_api_incremental",
+            "subreddit": subreddit,
+            "score": post_data.get("score", 0),
+            "created_utc": post_data.get("created_utc"),
+            "incremental": True
+        })
+    }
+
+# ================================================================
+# ENTERPRISE LOGGING AND MONITORING
+# ================================================================
+
+def _log_incremental_performance(self, api_name: str, start_time: float, tools_found: int, tools_skipped: int):
+    """Log performance metrics for incremental discovery"""
+    
+    processing_time = time.time() - start_time
+    efficiency = (tools_skipped / max(tools_found + tools_skipped, 1)) * 100
+    
+    print(f"    📊 {api_name} Performance:")
+    print(f"       • Processing time: {processing_time:.2f}s")
+    print(f"       • Tools found: {tools_found}")
+    print(f"       • Tools skipped: {tools_skipped}")
+    print(f"       • Efficiency: {efficiency:.1f}% reduction")
+
+def _validate_incremental_params(self, incremental_params: Dict[str, Any]) -> Dict[str, Any]:
+    """Validate and sanitize incremental parameters"""
+    
+    if not incremental_params:
+        return {}
+    
+    validated = {
+        "force_full_scan": bool(incremental_params.get("force_full_scan", False)),
+        "incremental_mode": bool(incremental_params.get("incremental_mode", True)),
+        "last_check_times": {}
+    }
+    
+    # Validate last check times
+    last_check_times = incremental_params.get("last_check_times", {})
+    if isinstance(last_check_times, dict):
+        for api_name, timestamp in last_check_times.items():
+            try:
+                # Validate timestamp format
+                datetime.fromisoformat(timestamp)
+                validated["last_check_times"][api_name] = timestamp
+            except Exception:
+                # Skip invalid timestamps
+                continue
+    
+    return validated
