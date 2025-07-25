@@ -1,8 +1,15 @@
 {
   "last_run_timestamps": {
-    "standard": "2025-07-24T18:46:19.256051"
+    "standard": "2025-07-24T18:46:19.256051",
+    "enhanced_all": "2025-07-25T11:04:12.470235"
   },
-  "api_last_checks": {},
+  "api_last_checks": {
+    "GitHub": "2025-07-25T11:04:12.470235",
+    "NPM": "2025-07-25T11:04:12.470235",
+    "Reddit": "2025-07-25T11:04:12.470235",
+    "Hacker News": "2025-07-25T11:04:12.470235",
+    "directories": "2025-07-25T10:58:37.882752"
+  },
   "total_runs": 1,
   "last_full_scan": "2025-07-24T18:46:19.256051",
   "force_full_scan_after_days": 7
