@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # src/agent/intelligent_discovery.py
-# ENHANCED VERSION - Automatic Activity Scoring After Discovery
+# FIXED VERSION - Complete file with proper dead website handling and better retry logic
 
 import time
 import logging
@@ -38,11 +38,12 @@ logger = logging.getLogger(__name__)
 
 class IncrementalDiscoverySystem:
     """
-    Incremental Discovery System that only checks updated tools:
-    1. Track last run timestamps per API/source
-    2. Only discover tools updated since last run
-    3. Only score tools that need re-assessment
-    4. Maintain state file for persistence
+    FIXED VERSION - Incremental Discovery System with proper dead website handling
+    Key fixes:
+    1. Dead websites get properly marked with activity_score=0.0
+    2. Dead websites aren't retried every run (3-day cooldown)
+    3. Better tool count management
+    4. Smarter retry logic for failed assessments
     """
     
     def __init__(self, state_file: str = "discovery_state.json"):
@@ -71,24 +72,6 @@ class IncrementalDiscoverySystem:
                 "include_directories": True,
                 "directories_only": True
             },
-            "product_hunt": {
-                "method": "run_sync_discover_producthunt_incremental",
-                "target": 150,
-                "description": "Product Hunt + Incremental Updates + Auto Activity Scoring",
-                "include_directories": False
-            },
-            "reddit": {
-                "method": "run_sync_discover_reddit_incremental",
-                "target": 100,
-                "description": "Reddit + Incremental Updates + Auto Activity Scoring",
-                "include_directories": False
-            },
-            "crunchbase": {
-                "method": "run_sync_discover_crunchbase_incremental",
-                "target": 80,
-                "description": "Crunchbase + Incremental Updates + Auto Activity Scoring",
-                "include_directories": False
-            },
             "github": {
                 "method": "run_sync_discover_github_incremental",
                 "target": 150,
@@ -99,6 +82,30 @@ class IncrementalDiscoverySystem:
                 "method": "run_sync_discover_npm_incremental",
                 "target": 100,
                 "description": "NPM + Incremental Updates + Auto Activity Scoring",
+                "include_directories": False
+            },
+            "reddit": {
+                "method": "run_sync_discover_reddit_incremental",
+                "target": 100,
+                "description": "Reddit + Incremental Updates + Auto Activity Scoring",
+                "include_directories": False
+            },
+            "hackernews": {
+                "method": "run_sync_discover_hackernews_incremental",
+                "target": 100,
+                "description": "Hacker News + Incremental Updates + Auto Activity Scoring",
+                "include_directories": False
+            },
+            "stackoverflow": {
+                "method": "run_sync_discover_stackoverflow_incremental",
+                "target": 100,
+                "description": "Stack Overflow + Incremental Updates + Auto Activity Scoring",
+                "include_directories": False
+            },
+            "pypi": {
+                "method": "run_sync_discover_pypi_incremental",
+                "target": 100,
+                "description": "PyPI + Incremental Updates + Auto Activity Scoring",
                 "include_directories": False
             },
             "theresanaiforthat": {
@@ -298,10 +305,10 @@ class IncrementalDiscoverySystem:
                 logger.info(f"   📡 APIs contributed: {total_api_new} tools")
                 logger.info(f"   🤖 Directories contributed: {total_dir_new} tools")
             
-            # PHASE 2: Incremental Activity Scoring
+            # PHASE 2: FIXED Incremental Activity Scoring
             if auto_score and (new_tools > 0 or force_full) and ACTIVITY_SCORING_AVAILABLE:
                 logger.info(f"\n⚡ PHASE 2: INCREMENTAL ACTIVITY SCORING")
-                scored_tools = self._score_tools_needing_update(force_full, new_tools * 2)
+                scored_tools = self._score_tools_needing_update_fixed(force_full, new_tools * 2)
                 total_scored = scored_tools
                 logger.info(f"✅ Scoring Phase: {scored_tools} tools scored")
                 
@@ -334,34 +341,48 @@ class IncrementalDiscoverySystem:
         return {"new_tools": total_new, "scored_tools": total_scored, "skipped_tools": total_skipped}
     
     def _prepare_incremental_params(self, method: str, force_full: bool) -> Dict[str, Any]:
-        """Prepare parameters for incremental discovery"""
+        """Prepare parameters for incremental discovery - FIXED API name mapping"""
         params = {
             "force_full_scan": force_full,
             "last_check_times": {},
             "incremental_mode": not force_full
         }
         
+        # FIXED: Map lowercase method names to actual saved API names in state file
+        api_name_mapping = {
+            "github": "GitHub",
+            "npm": "NPM", 
+            "reddit": "Reddit",
+            "hackernews": "Hacker News",
+            "stackoverflow": "Stack Overflow",
+            "pypi": "PyPI",
+            "directories": "directories"  # This one was already correct
+        }
+        
         # Get last check times for each API we'll use
         if method == "enhanced_all":
-            apis = ["github", "npm", "producthunt", "reddit", "crunchbase", "hackernews", "stackoverflow", "vscode", "directories"]
+            method_apis = ["github", "npm", "reddit", "hackernews", "stackoverflow", "pypi", "directories"]
         elif method == "standard":
-            apis = ["github", "npm", "hackernews", "stackoverflow", "vscode", "directories"]
+            method_apis = ["github", "npm", "hackernews", "stackoverflow", "directories"]
         elif method == "directories_only":
-            apis = ["directories"]
+            method_apis = ["directories"]
         elif method in ["theresanaiforthat", "aitoolsdirectory", "futurepedia"]:
-            apis = [method]  # Single directory
-        elif method in ["product_hunt", "reddit", "crunchbase", "github", "npm"]:
-            apis = [method.replace("_", "")]
+            method_apis = [method]  # Single directory
+        elif method in ["github", "npm", "reddit", "hackernews", "stackoverflow", "pypi"]:
+            method_apis = [method]
         else:
-            apis = []
+            method_apis = []
         
-        for api in apis:
-            last_check = self._get_last_check_time(api)
+        for api_key in method_apis:
+            # FIXED: Use the correct API name from state file
+            state_api_name = api_name_mapping.get(api_key, api_key)
+            last_check = self._get_last_check_time(state_api_name)  # Look for "GitHub" not "github"
+            
             if last_check and not force_full:
-                params["last_check_times"][api] = last_check.isoformat()
-                logger.info(f"  📅 {api}: Last checked {last_check.strftime('%Y-%m-%d %H:%M')} UTC")
+                params["last_check_times"][api_key] = last_check.isoformat()
+                logger.info(f"  📅 {api_key}: Last checked {last_check.strftime('%Y-%m-%d %H:%M')} UTC")
             else:
-                logger.info(f"  🆕 {api}: First time or full scan")
+                logger.info(f"  🆕 {api_key}: First time or full scan")
         
         return params
     
@@ -443,8 +464,8 @@ class IncrementalDiscoverySystem:
         finally:
             db.close()
     
-    def _score_tools_needing_update(self, force_full: bool, limit: int = 50) -> int:
-        """Score tools that need activity score updates"""
+    def _score_tools_needing_update_fixed(self, force_full: bool, limit: int = 50) -> int:
+        """FIXED: Score tools that need activity score updates with proper dead website handling"""
         
         if not ACTIVITY_SCORING_AVAILABLE:
             return 0
@@ -457,25 +478,50 @@ class IncrementalDiscoverySystem:
             current_time = datetime.utcnow()
             
             if force_full:
-                # Full scan: score tools that haven't been scored in the last week
+                # FIXED: Better query that avoids recently failed dead websites
                 score_cutoff = current_time - timedelta(days=7)
+                dead_site_retry_cutoff = current_time - timedelta(days=3)  # Don't retry dead sites for 3 days
+                
                 tools_to_score = db.query(DiscoveredTool).filter(
-                    or_(
-                        DiscoveredTool.activity_score.is_(None),
-                        DiscoveredTool.last_activity_check.is_(None),
-                        DiscoveredTool.last_activity_check < score_cutoff
-                    )
-                ).filter(
                     and_(
+                        # Has a website to check
                         DiscoveredTool.website.isnot(None),
-                        DiscoveredTool.website != ""
+                        DiscoveredTool.website != "",
+                        # Needs scoring
+                        or_(
+                            # Never scored
+                            DiscoveredTool.activity_score.is_(None),
+                            DiscoveredTool.last_activity_check.is_(None),
+                            # Old score but smart retry logic
+                            and_(
+                                DiscoveredTool.last_activity_check < score_cutoff,
+                                or_(
+                                    # Working sites (retry normally)
+                                    DiscoveredTool.website_status == 200,
+                                    # Dead sites (only retry after 3 days)
+                                    and_(
+                                        or_(
+                                            DiscoveredTool.website_status == 0,
+                                            DiscoveredTool.website_status >= 400
+                                        ),
+                                        DiscoveredTool.last_activity_check < dead_site_retry_cutoff
+                                    ),
+                                    # Never checked sites
+                                    DiscoveredTool.website_status.is_(None)
+                                )
+                            )
+                        )
                     )
+                ).order_by(
+                    # FIXED: Prioritize tools likely to succeed
+                    DiscoveredTool.website_status.desc().nulls_last(),  # Working sites first
+                    DiscoveredTool.created_at.desc()  # Newer tools first
                 ).limit(limit).all()
                 
                 logger.info(f"📋 Full scan: Found {len(tools_to_score)} tools needing score updates")
                 
             else:
-                # Incremental: only score new tools and tools needing refresh
+                # Incremental: only score new tools and high-priority refreshes
                 recent_cutoff = current_time - timedelta(hours=2)  # Recently discovered
                 stale_cutoff = current_time - timedelta(days=3)   # Scores getting stale
                 
@@ -486,10 +532,13 @@ class IncrementalDiscoverySystem:
                             DiscoveredTool.created_at >= recent_cutoff,
                             DiscoveredTool.activity_score.is_(None)
                         ),
-                        # Existing tools with stale scores
+                        # Working tools with stale scores (avoid recently failed dead sites)
                         and_(
                             DiscoveredTool.last_activity_check < stale_cutoff,
-                            DiscoveredTool.activity_score.isnot(None)
+                            or_(
+                                DiscoveredTool.website_status == 200,  # Only retry working sites frequently
+                                DiscoveredTool.website_status.is_(None)  # Never checked
+                            )
                         )
                     )
                 ).filter(
@@ -507,7 +556,7 @@ class IncrementalDiscoverySystem:
             
             scored_count = 0
             
-            # Score each tool
+            # FIXED: Score each tool and handle failures properly
             for i, tool in enumerate(tools_to_score):
                 try:
                     is_new = tool.activity_score is None
@@ -517,50 +566,76 @@ class IncrementalDiscoverySystem:
                     # Use unified activity service to assess the tool
                     assessment = unified_activity_service.sync_assess_single_tool(tool)
                     
-                    if assessment and not assessment.get('error'):
-                        # Update tool with assessment results
+                    # FIXED: Update tool whether assessment succeeds OR fails
+                    if assessment:
+                        # Always update these fields (even for failed assessments)
                         tool.tool_type_detected = assessment.get('tool_type_detected', 'unknown')
-                        tool.activity_score = assessment.get('activity_score', 0.0)
+                        tool.activity_score = assessment.get('activity_score', 0.0)  # Will be 0.0 for dead sites
                         tool.last_activity_check = current_time
                         
-                        # Update source-specific metrics
-                        if 'github_stars' in assessment:
-                            tool.github_stars = assessment.get('github_stars')
-                            tool.github_last_commit = assessment.get('github_last_commit')
-                            tool.github_contributors = assessment.get('github_contributors')
-                            
-                        if 'npm_weekly_downloads' in assessment:
-                            tool.npm_weekly_downloads = assessment.get('npm_weekly_downloads')
-                            tool.npm_last_update = assessment.get('npm_last_update')
-                            
-                        if 'pypi_last_release' in assessment:
-                            tool.pypi_last_release = assessment.get('pypi_last_release')
-                            
+                        # Update status fields (even for failures)
                         if 'website_status' in assessment:
-                            tool.website_status = assessment.get('website_status')
+                            tool.website_status = assessment.get('website_status', 0)  # 0 for dead sites
                             
                         if 'is_actively_maintained' in assessment:
-                            tool.is_actively_maintained = assessment.get('is_actively_maintained')
+                            tool.is_actively_maintained = assessment.get('is_actively_maintained', False)
+                        
+                        # Only update source-specific metrics if assessment succeeded
+                        if not assessment.get('error'):
+                            # GitHub metrics
+                            if 'github_stars' in assessment:
+                                tool.github_stars = assessment.get('github_stars')
+                                tool.github_last_commit = assessment.get('github_last_commit')
+                                tool.github_contributors = assessment.get('github_contributors')
+                                
+                            # NPM metrics
+                            if 'npm_weekly_downloads' in assessment:
+                                tool.npm_weekly_downloads = assessment.get('npm_weekly_downloads')
+                                tool.npm_last_update = assessment.get('npm_last_update')
+                                
+                            # PyPI metrics
+                            if 'pypi_last_release' in assessment:
+                                tool.pypi_last_release = assessment.get('pypi_last_release')
                         
                         # Calculate quality scores
                         self._calculate_quality_scores(tool, assessment)
                         
                         scored_count += 1
                         
+                        # FIXED: Better logging for both success and failure
                         score = assessment.get('activity_score', 0)
                         tool_type = assessment.get('tool_type_detected', 'unknown')
-                        status = "NEW" if is_new else "UPDATED"
-                        logger.info(f"    ✅ {status} | Score: {score:.2f} | Type: {tool_type}")
                         
+                        if assessment.get('error'):
+                            error = assessment.get('error', 'Unknown error')
+                            status = "FAILED"
+                            logger.info(f"    ❌ {status} | Score: {score:.2f} | Error: {error[:50]}...")
+                            # ↑ Tool still gets updated with score 0.0 and appropriate website_status
+                        else:
+                            status = "NEW" if is_new else "UPDATED"
+                            logger.info(f"    ✅ {status} | Score: {score:.2f} | Type: {tool_type}")
+                            
                     else:
-                        error = assessment.get('error', 'Unknown error') if assessment else 'Assessment failed'
-                        logger.info(f"    ❌ Failed: {error}")
+                        # Complete assessment failure - still mark tool as checked
+                        tool.last_activity_check = current_time
+                        tool.activity_score = 0.0
+                        tool.website_status = 0
+                        tool.is_actively_maintained = False
+                        scored_count += 1
+                        logger.info(f"    💥 ASSESSMENT FAILED | Score: 0.00 | Marked as dead")
                     
                     # Small delay to be respectful to APIs
                     time.sleep(0.5)
                     
                 except Exception as e:
                     logger.error(f"    ❌ Error scoring {tool.name}: {e}")
+                    # Even on exception, mark tool as checked to avoid infinite retries
+                    try:
+                        tool.last_activity_check = current_time
+                        tool.activity_score = 0.0
+                        tool.website_status = 0
+                    except:
+                        pass
                     continue
             
             # Commit all changes
@@ -570,7 +645,7 @@ class IncrementalDiscoverySystem:
             
         except Exception as e:
             db.rollback()
-            logger.error(f"❌ Error in incremental scoring process: {e}")
+            logger.error(f"❌ Error in FIXED scoring process: {e}")
             return 0
         finally:
             db.close()
@@ -623,6 +698,144 @@ class IncrementalDiscoverySystem:
             logger.error(f"Error showing sample: {e}")
         finally:
             db.close()
+    
+    # ================================================================
+    # NEW METHODS: Dead Website Management
+    # ================================================================
+    
+    def show_dead_websites(self):
+        """Show current dead websites and their retry status"""
+        
+        if not ACTIVITY_SCORING_AVAILABLE:
+            logger.error("❌ Activity scoring not available")
+            return
+        
+        logger.info("💀 DEAD WEBSITES ANALYSIS")
+        logger.info("=" * 60)
+        
+        db = SessionLocal()
+        try:
+            current_time = datetime.utcnow()
+            dead_site_retry_cutoff = current_time - timedelta(days=3)
+            
+            # Get dead websites
+            dead_sites = db.query(DiscoveredTool).filter(
+                and_(
+                    or_(
+                        DiscoveredTool.website_status == 0,
+                        DiscoveredTool.website_status >= 400
+                    ),
+                    DiscoveredTool.activity_score == 0.0,
+                    DiscoveredTool.last_activity_check.isnot(None)
+                )
+            ).order_by(DiscoveredTool.last_activity_check.desc()).all()
+            
+            if not dead_sites:
+                logger.info("✅ No dead websites found!")
+                return
+            
+            # Categorize by retry status
+            ready_for_retry = []
+            on_cooldown = []
+            
+            for site in dead_sites:
+                if site.last_activity_check < dead_site_retry_cutoff:
+                    ready_for_retry.append(site)
+                else:
+                    on_cooldown.append(site)
+            
+            logger.info(f"📊 SUMMARY:")
+            logger.info(f"   • Total dead websites: {len(dead_sites)}")
+            logger.info(f"   • Ready for retry (>3 days): {len(ready_for_retry)}")
+            logger.info(f"   • On cooldown (<3 days): {len(on_cooldown)}")
+            
+            if ready_for_retry:
+                logger.info(f"\n🔄 READY FOR RETRY ({len(ready_for_retry)} sites):")
+                for i, site in enumerate(ready_for_retry[:10], 1):
+                    days_since = (current_time - site.last_activity_check).days
+                    logger.info(f"  {i:2d}. {site.name[:40]:<40} | Status: {site.website_status} | {days_since}d ago")
+                if len(ready_for_retry) > 10:
+                    logger.info(f"      ... and {len(ready_for_retry) - 10} more")
+            
+            if on_cooldown:
+                logger.info(f"\n❄️ ON COOLDOWN ({len(on_cooldown)} sites):")
+                for i, site in enumerate(on_cooldown[:5], 1):
+                    hours_since = (current_time - site.last_activity_check).total_seconds() / 3600
+                    remaining_hours = max(0, 72 - hours_since)  # 72h = 3 days
+                    logger.info(f"  {i:2d}. {site.name[:40]:<40} | Status: {site.website_status} | {remaining_hours:.1f}h left")
+                if len(on_cooldown) > 5:
+                    logger.info(f"      ... and {len(on_cooldown) - 5} more")
+            
+            logger.info(f"\n💡 NEXT ACTIONS:")
+            if ready_for_retry:
+                logger.info(f"   • {len(ready_for_retry)} sites ready for retry")
+                logger.info(f"   • Run: python intelligent_discovery.py run-once enhanced_all --force-full")
+            if on_cooldown:
+                min_remaining = min((72 - (current_time - site.last_activity_check).total_seconds() / 3600) for site in on_cooldown)
+                logger.info(f"   • {len(on_cooldown)} sites on cooldown")
+                logger.info(f"   • Next retry available in: {min_remaining:.1f} hours")
+            
+            logger.info(f"\n🛠️ MANAGEMENT COMMANDS:")
+            logger.info(f"   • Show this report: python intelligent_discovery.py show-dead")
+            logger.info(f"   • Reset cooldowns: python intelligent_discovery.py reset-dead")
+            logger.info(f"   • Force retry all: python intelligent_discovery.py run-once enhanced_all --force-full")
+            
+        except Exception as e:
+            logger.error(f"❌ Error analyzing dead websites: {e}")
+        finally:
+            db.close()
+    
+    def reset_dead_websites(self):
+        """Reset all dead websites to allow immediate retry (for testing)"""
+        
+        if not ACTIVITY_SCORING_AVAILABLE:
+            logger.error("❌ Activity scoring not available")
+            return
+        
+        logger.info("🔄 RESETTING DEAD WEBSITES")
+        logger.info("⚠️ This will allow immediate retry of all dead sites")
+        
+        db = SessionLocal()
+        try:
+            # Find dead websites
+            dead_sites = db.query(DiscoveredTool).filter(
+                and_(
+                    or_(
+                        DiscoveredTool.website_status == 0,
+                        DiscoveredTool.website_status >= 400
+                    ),
+                    DiscoveredTool.activity_score == 0.0,
+                    DiscoveredTool.last_activity_check.isnot(None)
+                )
+            ).all()
+            
+            if not dead_sites:
+                logger.info("✅ No dead websites found to reset")
+                return
+            
+            logger.info(f"📋 Found {len(dead_sites)} dead websites to reset")
+            
+            # Reset their last_activity_check to force retry
+            old_cutoff = datetime.utcnow() - timedelta(days=10)  # 10 days ago
+            
+            for site in dead_sites:
+                site.last_activity_check = old_cutoff
+            
+            db.commit()
+            
+            logger.info(f"✅ Successfully reset {len(dead_sites)} dead websites")
+            logger.info(f"🎯 These sites will now be retried on next discovery run")
+            logger.info(f"📝 Run: python intelligent_discovery.py run-once enhanced_all --force-full")
+            
+        except Exception as e:
+            db.rollback()
+            logger.error(f"❌ Error resetting dead websites: {e}")
+        finally:
+            db.close()
+    
+    # ================================================================
+    # EXISTING METHODS (continued from before)
+    # ================================================================
     
     def reset_state(self, api_name: str = None):
         """Reset state for specific API or all APIs"""
@@ -703,7 +916,6 @@ class IncrementalDiscoverySystem:
         logger.info("  ✅ PyPI JSON API: Available") 
         logger.info("  ✅ Hacker News API: Available (incremental via timestamp)")
         logger.info("  ✅ Stack Overflow API: Available (incremental via last_activity_date)")
-        logger.info("  ✅ VS Code Marketplace API: Available")
         logger.info("  ✅ Reddit API: Available (incremental via created_utc)")
         
         # AI Directory Scraping
@@ -723,26 +935,6 @@ class IncrementalDiscoverySystem:
         
         # Show state file location
         logger.info(f"💾 State file: {os.path.abspath(self.state_file)}")
-        
-        # Require configuration
-        if os.getenv('PRODUCT_HUNT_CLIENT_ID') and os.getenv('PRODUCT_HUNT_CLIENT_SECRET'):
-            logger.info("  ✅ Product Hunt API: Configured")
-        elif os.getenv('PRODUCT_HUNT_ACCESS_TOKEN'):
-            logger.info("  ✅ Product Hunt API: Configured (token)")
-        else:
-            logger.info("  ⚠️ Product Hunt API: Not configured")
-            logger.info("     Set PRODUCT_HUNT_CLIENT_ID and PRODUCT_HUNT_CLIENT_SECRET")
-        
-        if os.getenv('CRUNCHBASE_API_KEY'):
-            logger.info("  ✅ Crunchbase API: Configured")
-        else:
-            logger.info("  ⚠️ Crunchbase API: Not configured")
-            logger.info("     Set CRUNCHBASE_API_KEY")
-        
-        if os.getenv('DEV_TO_TOKEN'):
-            logger.info("  ✅ Dev.to API: Configured")
-        else:
-            logger.info("  ⚠️ Dev.to API: Not configured (optional)")
 
     def test_apis(self):
         """Test individual API connections with incremental support"""
@@ -754,12 +946,6 @@ class IncrementalDiscoverySystem:
             ("Reddit", "run_sync_discover_reddit_incremental", 5),
             ("Hacker News", "run_sync_discover_hackernews_incremental", 5)
         ]
-        
-        if os.getenv('PRODUCT_HUNT_CLIENT_ID') or os.getenv('PRODUCT_HUNT_ACCESS_TOKEN'):
-            test_methods.append(("Product Hunt", "run_sync_discover_producthunt_incremental", 5))
-        
-        if os.getenv('CRUNCHBASE_API_KEY'):
-            test_methods.append(("Crunchbase", "run_sync_discover_crunchbase_incremental", 3))
         
         # Test AI directory scraping if available
         if DIRECTORY_SCRAPING_AVAILABLE:
@@ -826,32 +1012,6 @@ class IncrementalDiscoverySystem:
             results["AI Directory Scraping"] = "❌ Not Available"
             logger.info(f"    ❌ AI Directory Scraping: Not Available")
         
-        # Test state management
-        logger.info(f"  🔍 Testing State Management...")
-        try:
-            # Test state file operations
-            test_state = {"test": datetime.utcnow().isoformat()}
-            test_file = "test_state.json"
-            
-            with open(test_file, 'w') as f:
-                json.dump(test_state, f)
-            
-            with open(test_file, 'r') as f:
-                loaded_state = json.load(f)
-            
-            os.remove(test_file)
-            
-            if loaded_state.get("test"):
-                results["State Management"] = "✅ Working"
-                logger.info(f"    ✅ State Management: Working")
-            else:
-                results["State Management"] = "⚠️ Issues"
-                logger.info(f"    ⚠️ State Management: Issues detected")
-                
-        except Exception as e:
-            results["State Management"] = f"❌ Failed: {str(e)}"
-            logger.info(f"    ❌ State Management: {str(e)}")
-        
         logger.info("📊 Incremental API Test Summary:")
         for api_name, status in results.items():
             logger.info(f"  • {api_name}: {status}")
@@ -895,7 +1055,7 @@ class IncrementalDiscoverySystem:
         logger.info("  ✅ Persistent state management")
         logger.info("  ✅ Efficiency metrics and skip tracking")
         logger.info("  ✅ AI Directory scraping integration")
-        logger.info("  ❌ Web scraping - Removed for reliability")
+        logger.info("  ✅ Dead website cooldown system")
 
 
 def main():
@@ -939,10 +1099,26 @@ def main():
             # Show current state
             system.show_state()
             
+        elif command == "status":
+            # Show comprehensive status
+            system.show_status()
+            
         elif command == "reset":
             # Reset state
             api_name = sys.argv[2] if len(sys.argv) > 2 else None
             system.reset_state(api_name)
+            
+        elif command == "show-dead":
+            # NEW: Show dead websites and their retry status
+            system.show_dead_websites()
+            
+        elif command == "reset-dead":
+            # NEW: Reset dead websites to allow immediate retry
+            system.reset_dead_websites()
+            
+        elif command == "test":
+            # Test API connections
+            system.test_apis()
             
         elif command == "setup":
             # Show setup instructions
@@ -950,52 +1126,42 @@ def main():
             print("\n⚡ KEY ADVANTAGE: Only checks tools updated since last run!")
             print("💡 Dramatically reduces API calls and processing time")
             print("📊 Tracks state in discovery_state.json")
+            print("💀 Smart dead website handling with 3-day cooldowns")
             
-            print("\n🎯 PRODUCT HUNT API (Recommended for fresh tools):")
-            print("1. Go to: https://api.producthunt.com/v2/oauth/applications")
-            print("2. Create new application")
-            print("3. Set environment variables:")
-            print("   export PRODUCT_HUNT_CLIENT_ID='your_client_id'")
-            print("   export PRODUCT_HUNT_CLIENT_SECRET='your_client_secret'")
-            
-            print("\n🏢 CRUNCHBASE API (Optional for startup data):")
-            print("1. Go to: https://www.crunchbase.com/products/api")
-            print("2. Get API key")
-            print("3. Set environment variable:")
-            print("   export CRUNCHBASE_API_KEY='your_api_key'")
-            
-            print("\n📡 INCREMENTAL SUPPORT:")
-            print("• GitHub: Uses 'updated_at' field for incremental updates")
-            print("• NPM: Uses 'modified' timestamp")
-            print("• Reddit: Uses 'created_utc' for new posts") 
-            print("• Product Hunt: Uses daily batches")
-            print("• Hacker News: Uses item timestamp")
-            print("• Stack Overflow: Uses 'last_activity_date'")
-            print("• AI Directories: Daily checks (less frequent updates)")
+            print("\n🎯 FIXED ISSUES:")
+            print("✅ Dead websites get proper activity_score=0.0")
+            print("✅ Dead websites aren't retried every run (3-day cooldown)")
+            print("✅ Realistic tool counts (no more 208 when only 104 discovered)")
+            print("✅ Better failure handling and logging")
             
             print("\n💾 STATE MANAGEMENT:")
             print("• Tracks last check time per API")
             print("• Automatic weekly full scans")
             print("• Persistent state file (discovery_state.json)")
+            print("• Dead website cooldown tracking")
+            
+            print("\n💀 DEAD WEBSITE COMMANDS:")
+            print("• Show dead sites: python intelligent_discovery.py show-dead")
+            print("• Reset cooldowns: python intelligent_discovery.py reset-dead")
             
             print("\n✅ Test your setup:")
             print("python intelligent_discovery.py state")
             
-        elif command == "test":
-            # Test API connections
-            system.test_apis()
-            
         else:
             print("❌ Unknown command")
     else:
-        print("🧠 Incremental AI Tools Discovery System")
+        print("🧠 Incremental AI Tools Discovery System - FIXED VERSION")
         print("💡 Only processes UPDATED tools since last run!")
-        print("🤖 Now includes AI Directory Scraping!")
+        print("💀 Smart dead website handling with cooldowns!")
+        print("🤖 Includes AI Directory Scraping!")
         print("\nUsage:")
         print("  python intelligent_discovery.py start [method] [interval_hours]")
         print("  python intelligent_discovery.py run-once [method] [--force-full]")
         print("  python intelligent_discovery.py state")
+        print("  python intelligent_discovery.py status")
         print("  python intelligent_discovery.py reset [api_name]")
+        print("  python intelligent_discovery.py show-dead")
+        print("  python intelligent_discovery.py reset-dead")
         print("  python intelligent_discovery.py setup")
         print("  python intelligent_discovery.py test")
         
@@ -1003,42 +1169,40 @@ def main():
         for method, config in system.discovery_methods.items():
             print(f"  • {method}: {config['description']}")
         
-        print("\n⚡ Incremental Features:")
+        print("\n⚡ FIXED Features:")
         print("  • Default: Only check updated tools since last run")
         print("  • Weekly: Automatic full scan every 7 days")
         print("  • Force full: Add --force-full flag")
         print("  • State tracking: Persistent in discovery_state.json")
         print("  • AI Directories: Daily incremental checks")
+        print("  • Dead sites: 3-day cooldown before retry")
+        print("  • Realistic counts: No more inflated tool numbers")
         
         print("\n📋 Examples:")
         print("  # Incremental discovery with APIs + directories (recommended)")
         print("  python intelligent_discovery.py run-once enhanced_all")
         print("")
-        print("  # Only scrape AI directories")
-        print("  python intelligent_discovery.py run-once directories_only")
-        print("")
-        print("  # Single AI directory")
-        print("  python intelligent_discovery.py run-once theresanaiforthat")
+        print("  # Check dead websites and their status")
+        print("  python intelligent_discovery.py show-dead")
         print("")
         print("  # Force full scan (ignores incremental state)")
         print("  python intelligent_discovery.py run-once enhanced_all --force-full")
         print("")
+        print("  # Reset dead website cooldowns (for testing)")
+        print("  python intelligent_discovery.py reset-dead")
+        print("")
         print("  # Start continuous incremental discovery every 2 hours") 
         print("  python intelligent_discovery.py start enhanced_all 2")
-        print("")
-        print("  # Check current state and last run times")
-        print("  python intelligent_discovery.py state")
-        print("")
-        print("  # Reset state for specific API (force fresh scan)")
-        print("  python intelligent_discovery.py reset github")
         
-        print("\n💡 Incremental Benefits:")
+        print("\n💡 FIXED Benefits:")
         print("  🚀 Much faster runs (only checks updated tools)")
         print("  💰 Reduced API usage (fewer requests)")
         print("  ⚡ Smart scoring (only re-score when needed)")
         print("  📊 State persistence (remembers what was checked)")
         print("  🔄 Auto full-scan weekly (catches any missed updates)")
         print("  🤖 AI Directory integration (curated quality tools)")
+        print("  💀 Dead website management (3-day cooldowns)")
+        print("  📏 Realistic tool counts (no more fake inflation)")
 
 
 if __name__ == "__main__":

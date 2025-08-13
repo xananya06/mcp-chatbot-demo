@@ -43,7 +43,9 @@ RUN pip install --no-cache-dir \
     aiohttp>=3.9.0 \
     beautifulsoup4>=4.12.0 \
     lxml>=4.9.0 \
-    requests>=2.31.0
+    requests>=2.31.0 \
+    pandas>=2.0.0 \
+    openpyxl>=3.1.0
 
 # Install fast-agent separately (since it's from git)
 RUN pip install --no-cache-dir git+https://github.com/acuvity/fast-agent.git
