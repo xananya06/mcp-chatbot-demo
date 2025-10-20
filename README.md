@@ -108,12 +108,12 @@ Includes activity score filtering, cross-platform analysis, and tool type-specif
 │                                                   │
 │  ┌────────────┐      ┌─────────────┐            │
 │  │ Discovery  │─────▶│  Activity   │            │
-│  │ (9 sources)│      │  Assessment │            │
+│  │ (10 sources)│      │  Assessment │            │
 │  └────────────┘      └─────────────┘            │
 │         │                    │                   │
 │         ▼                    ▼                   │
 │  ┌──────────────────────────────┐               │
-│  │   PostgreSQL (25K+ tools)    │               │
+│  │   PostgreSQL (15K+ tools)    │               │
 │  └──────────────────────────────┘               │
 │                  │                                │
 │                  ▼                                │
