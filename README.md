@@ -9,7 +9,7 @@ Extends the original MCP chatbot into a production-ready AI Tools Intelligence P
 
 ### 1. **Multi-Source Tool Discovery System**
 
-Built an automated discovery engine that indexes 25,000+ AI tools from 6 real APIs:
+Built an automated discovery engine that indexes 15,000+ AI tools from 6 real APIs:
 
 - **GitHub** - Repositories with incremental updates
 - **NPM** - Packages with download metrics  
